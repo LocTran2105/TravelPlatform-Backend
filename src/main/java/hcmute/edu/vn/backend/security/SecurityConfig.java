@@ -3,6 +3,7 @@ package hcmute.edu.vn.backend.security;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -19,7 +20,6 @@ public class SecurityConfig {
     @Autowired
     private AuthTokenFilter authTokenFilter;
 
-    // Bộ mã hóa mật khẩu để lưu vào Database một cách an toàn
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
@@ -28,16 +28,15 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-                .csrf(AbstractHttpConfigurer::disable) // Tắt CSRF vì ta dùng Token
-                .cors(cors -> cors.configure(null)) // Dùng cấu hình CORS đã tạo ở bước khởi tạo dự án
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)) // REST API không dùng Session
+                .csrf(AbstractHttpConfigurer::disable)
+                .cors(Customizer.withDefaults()) // Đã sửa lỗi tại đây
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/**").permitAll() // Cho phép tất cả truy cập API Đăng nhập/Đăng ký
-                        .requestMatchers("/api/public/**").permitAll() // Các API public (như xem lịch trình public)
-                        .anyRequest().authenticated() // Tất cả các API còn lại đều phải có Token hợp lệ
+                        .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers("/api/public/**").permitAll()
+                        .anyRequest().authenticated()
                 );
 
-        // Chèn bộ lọc Token vào trước bộ lọc xác thực mặc định
         http.addFilterBefore(authTokenFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
