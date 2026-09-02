@@ -1,5 +1,6 @@
 package hcmute.edu.vn.backend.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.*;
 import java.time.LocalDateTime;
@@ -29,6 +30,7 @@ public class Hotel {
     @Column(columnDefinition = "TEXT")
     private String description;
 
+    @JsonIgnoreProperties("hotel")
     @OneToMany(mappedBy = "hotel", cascade = CascadeType.ALL)
     private List<Room> rooms;
 

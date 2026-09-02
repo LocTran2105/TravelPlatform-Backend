@@ -26,7 +26,7 @@ public class Alert {
     private String description;
 
     @Column(name = "alert_type")
-    private String alertType;
+    private String alertType; // VD: SAT_LO, NGAP_LUT, CHOT_CA...
 
     @Column(nullable = false)
     private Double latitude;
