@@ -32,9 +32,13 @@ public class SecurityConfig {
                 .cors(Customizer.withDefaults()) // Đã sửa lỗi tại đây
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/**").permitAll()
-                        .requestMatchers("/api/public/**").permitAll()
-                        .requestMatchers("/api/auth/**", "/api/map/alerts/approved").permitAll()
+                        // Gộp chung các API public (không cần đăng nhập) vào 1 dòng hoặc để liên tiếp
+                        .requestMatchers("/api/auth/**", "/api/public/**", "/api/map/alerts/approved").permitAll()
+
+                        // API yêu cầu quyền Admin
+                        .requestMatchers("/api/admin/**").hasAuthority("ROLE_ADMIN")
+
+                        // Các API còn lại bắt buộc đăng nhập (Token hợp lệ)
                         .anyRequest().authenticated()
                 );
 
