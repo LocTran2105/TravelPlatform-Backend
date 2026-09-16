@@ -20,7 +20,7 @@ public class JwtUtils {
     }
 
     // Hàm tạo Token từ email của user
-    public String generateTokenFromEmail(String email) {
+    public String generateJwtTokenFromEmail(String email) {
         return Jwts.builder()
                 .setSubject(email)
                 .setIssuedAt(new Date())
@@ -45,4 +45,5 @@ public class JwtUtils {
         }
         return false;
     }
+
 }
