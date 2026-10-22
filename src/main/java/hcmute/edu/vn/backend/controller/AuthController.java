@@ -67,4 +67,25 @@ public class AuthController {
             return ResponseEntity.badRequest().body("Lỗi xác thực: " + e.getMessage());
         }
     }
+
+    @PostMapping("/forgot-password")
+    public ResponseEntity<?> forgotPassword(@RequestParam String email) {
+        try {
+            authService.processForgotPassword(email);
+            return ResponseEntity.ok("Đã gửi email hướng dẫn khôi phục mật khẩu!");
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<?> resetPassword(@RequestParam String token, @RequestBody java.util.Map<String, String> request) {
+        try {
+            String newPassword = request.get("newPassword");
+            authService.resetPassword(token, newPassword);
+            return ResponseEntity.ok("Đặt lại mật khẩu thành công!");
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
 }
