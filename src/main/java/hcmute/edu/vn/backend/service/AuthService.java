@@ -13,6 +13,8 @@ import hcmute.edu.vn.backend.security.JwtUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
+import org.springframework.mail.SimpleMailMessage;
+import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -20,8 +22,10 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.Optional;
+import java.util.UUID;
 
 @Service // Đánh dấu đây là tầng Service
 public class AuthService {
@@ -37,6 +41,9 @@ public class AuthService {
 
     @Value("${google.client.id}")
     private String googleClientId;
+
+    @Autowired
+    private JavaMailSender mailSender;
 
     // Logic Đăng ký
     public void registerUser(SignupRequest signUpRequest) throws Exception {
@@ -118,5 +125,53 @@ public class AuthService {
 
         // Trả về đủ 5 tham số (có thêm fullName) để không bị lỗi Expected 5 arguments
         return new AuthResponse(jwt, user.getId(), user.getEmail(), user.getFullName(), user.getRole());
+    }
+
+    // 1. Logic Gửi Email Quên Mật Khẩu
+    public void processForgotPassword(String email) throws Exception {
+        Optional<User> userOpt = userRepository.findByEmail(email);
+        if (userOpt.isEmpty()) {
+            throw new Exception("Không tìm thấy tài khoản với email này!");
+        }
+
+        User user = userOpt.get();
+        // Tạo token ngẫu nhiên và thời gian hết hạn (VD: 15 phút)
+        String token = UUID.randomUUID().toString();
+        user.setResetPasswordToken(token);
+        user.setTokenExpiryDate(LocalDateTime.now().plusMinutes(15));
+        userRepository.save(user);
+
+        // Gửi email
+        String resetLink = "http://localhost:5173/reset-password?token=" + token; // Link trỏ về ReactJS
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setTo(user.getEmail());
+        message.setSubject("[TravelPlatform] Yêu cầu khôi phục mật khẩu");
+        message.setText("Chào " + user.getFullName() + ",\n\n"
+                + "Bạn đã yêu cầu đặt lại mật khẩu. Vui lòng click vào link dưới đây để tiến hành:\n"
+                + resetLink + "\n\n"
+                + "Link này sẽ hết hạn trong 15 phút.\n"
+                + "Nếu bạn không yêu cầu, vui lòng bỏ qua email này.");
+
+        mailSender.send(message);
+    }
+
+    // 2. Logic Đặt Lại Mật Khẩu
+    public void resetPassword(String token, String newPassword) throws Exception {
+        Optional<User> userOpt = userRepository.findByResetPasswordToken(token);
+
+        if (userOpt.isEmpty()) {
+            throw new Exception("Token không hợp lệ hoặc không tồn tại!");
+        }
+
+        User user = userOpt.get();
+        if (user.getTokenExpiryDate().isBefore(LocalDateTime.now())) {
+            throw new Exception("Token đã hết hạn. Vui lòng yêu cầu lại!");
+        }
+
+        // Cập nhật mật khẩu mới và xóa token
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        user.setResetPasswordToken(null);
+        user.setTokenExpiryDate(null);
+        userRepository.save(user);
     }
 }
