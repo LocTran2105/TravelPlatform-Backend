@@ -1,20 +1,18 @@
 package hcmute.edu.vn.backend.service;
 
-import hcmute.edu.vn.backend.dto.DestinationRequest;
 import hcmute.edu.vn.backend.dto.TripRequest;
-import hcmute.edu.vn.backend.entity.Trip;
-import hcmute.edu.vn.backend.entity.TripDay;
-import hcmute.edu.vn.backend.entity.TripDestination;
-import hcmute.edu.vn.backend.entity.User;
-import hcmute.edu.vn.backend.repository.TripDayRepository;
-import hcmute.edu.vn.backend.repository.TripDestinationRepository;
-import hcmute.edu.vn.backend.repository.TripRepository;
-import hcmute.edu.vn.backend.repository.UserRepository;
+import hcmute.edu.vn.backend.entity.*;
+import hcmute.edu.vn.backend.repository.*;
 import jakarta.transaction.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 @Service
 public class TripService {
@@ -31,25 +29,93 @@ public class TripService {
     @Autowired
     private TripDestinationRepository tripDestinationRepository;
 
+    @Autowired
+    private TripMemberRepository tripMemberRepository;
 
-    // 1. Logic tạo chuyến đi mới
+    // 1. Logic tạo chuyến đi mới (Tích hợp tự động tạo Ngày + Thêm Bạn đồng hành)
+    @Transactional
     public Trip createTrip(TripRequest request, String userEmail) throws Exception {
-        // Tìm User trong DB dựa vào email lấy từ Token
-        User user = userRepository.findByEmail(userEmail)
+        User owner = userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new Exception("Không tìm thấy người dùng hiện tại!"));
 
+        if (request.getStartDate() != null && request.getEndDate() != null) {
+            if (request.getEndDate().isBefore(request.getStartDate())) {
+                throw new Exception("Ngày kết thúc không được nhỏ hơn ngày bắt đầu!");
+            }
+        }
+
         Trip trip = new Trip();
-        trip.setUser(user); // Gán người sở hữu chuyến đi
-        trip.setTitle(request.getTitle());
+        trip.setUser(owner);
+        trip.setDestination(request.getDestination());
+
+        String finalTitle = (request.getTitle() != null && !request.getTitle().trim().isEmpty())
+                ? request.getTitle().trim()
+                : "Chuyến đi đến " + (request.getDestination() != null ? request.getDestination() : "vùng đất mới");
+        trip.setTitle(finalTitle);
+
         trip.setStartDate(request.getStartDate());
         trip.setEndDate(request.getEndDate());
-        trip.setMemberCount(request.getMemberCount());
-        trip.setTotalBudget(request.getTotalBudget());
+        trip.setTotalBudget(request.getTotalBudget() != null ? request.getTotalBudget() : BigDecimal.ZERO);
 
-        // Nếu client không gửi isPublic, mặc định là false
-        trip.setIsPublic(request.getIsPublic() != null ? request.getIsPublic() : false);
-        trip.setPublicStatus("DRAFT"); // Trạng thái mặc định
+        String visibility = request.getVisibility() != null ? request.getVisibility().toUpperCase() : "PRIVATE";
+        trip.setVisibility(visibility);
+        boolean isPublic = "PUBLIC".equals(visibility) || Boolean.TRUE.equals(request.getIsPublic());
+        trip.setIsPublic(isPublic);
+        trip.setPublicStatus(isPublic ? "APPROVED" : "DRAFT");
 
+        // QUAN TRỌNG: Khởi tạo danh sách ngay từ đầu để tránh lỗi Null và OrphanRemoval của Hibernate
+        trip.setTripDays(new ArrayList<>());
+        trip.setMembers(new ArrayList<>());
+
+        // --- BƯỚC A: THÊM THÀNH VIÊN ĐỒNG HÀNH ---
+        TripMember ownerMember = new TripMember();
+        ownerMember.setTrip(trip);
+        ownerMember.setUser(owner);
+        ownerMember.setRole("OWNER");
+        ownerMember.setStatus("ACCEPTED");
+        trip.getMembers().add(ownerMember); // Đưa vào mảng thay vì gọi Repository.save()
+
+        if (request.getCompanionEmails() != null && !request.getCompanionEmails().isEmpty()) {
+            for (String companionEmail : request.getCompanionEmails()) {
+                String cleanEmail = companionEmail.trim().toLowerCase();
+                if (cleanEmail.equalsIgnoreCase(owner.getEmail())) continue;
+
+                Optional<User> companionOpt = userRepository.findByEmail(cleanEmail);
+                if (companionOpt.isPresent()) {
+                    User companion = companionOpt.get();
+                    TripMember member = new TripMember();
+                    member.setTrip(trip);
+                    member.setUser(companion);
+                    member.setRole("EDITOR");
+                    member.setStatus("ACCEPTED");
+                    trip.getMembers().add(member);
+                }
+            }
+        }
+        trip.setMemberCount(trip.getMembers().size());
+
+        // --- BƯỚC B: TỰ ĐỘNG SINH CÁC NGÀY (TRIP_DAYS) ---
+        if (request.getStartDate() != null && request.getEndDate() != null) {
+            long totalDays = ChronoUnit.DAYS.between(request.getStartDate(), request.getEndDate()) + 1;
+            totalDays = Math.min(totalDays, 60);
+
+            for (int i = 0; i < totalDays; i++) {
+                TripDay day = new TripDay();
+                day.setTrip(trip);
+                day.setDayNumber(i + 1);
+                day.setDayDate(request.getStartDate().plusDays(i));
+                trip.getTripDays().add(day); // Đưa vào mảng
+            }
+        } else {
+            TripDay defaultDay = new TripDay();
+            defaultDay.setTrip(trip);
+            defaultDay.setDayNumber(1);
+            defaultDay.setDayDate(LocalDate.now());
+            trip.getTripDays().add(defaultDay);
+        }
+
+        // BƯỚC C: LƯU TOÀN BỘ BẰNG 1 LỆNH DUY NHẤT
+        // Nhờ CascadeType.ALL, Hibernate sẽ tự động lặp qua mảng Members và TripDays để INSERT xuống Database
         return tripRepository.save(trip);
     }
 
@@ -61,69 +127,66 @@ public class TripService {
         return tripRepository.findByUserId(user.getId());
     }
 
-    // 3. Lấy chi tiết toàn bộ chuyến đi (bao gồm các ngày và điểm đến)
+    // 3. Lấy chi tiết toàn bộ chuyến đi (Cho phép Chủ sở hữu, Bạn đồng hành hoặc chuyến đi Public/Friends xem)
     public Trip getTripDetails(Long tripId, String userEmail) throws Exception {
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new Exception("Không tìm thấy chuyến đi!"));
 
-        // Kiểm tra bảo mật: Chỉ chủ sở hữu hoặc chuyến đi đang Public mới được xem
-        if (!trip.getUser().getEmail().equals(userEmail) && !trip.getIsPublic()) {
+        boolean isOwner = trip.getUser().getEmail().equalsIgnoreCase(userEmail);
+        boolean isCompanion = tripMemberRepository.existsByTripIdAndUserEmail(tripId, userEmail);
+        boolean isPublicOrFriends = Boolean.TRUE.equals(trip.getIsPublic()) || "FRIENDS".equalsIgnoreCase(trip.getVisibility());
+
+        if (!isOwner && !isCompanion && !isPublicOrFriends) {
             throw new Exception("Bạn không có quyền xem chuyến đi này!");
         }
         return trip;
     }
 
-    //4. Nhân bản lịch trình
+    // 4. Nhân bản lịch trình
     @Transactional
     public Trip cloneTrip(Long originalTripId, String currentUserEmail) throws Exception {
-        // 1. Tìm User sẽ sở hữu bản clone
         User currentUser = userRepository.findByEmail(currentUserEmail)
                 .orElseThrow(() -> new Exception("Không tìm thấy người dùng hiện tại!"));
 
-        // 2. Tìm chuyến đi gốc
         Trip originalTrip = tripRepository.findById(originalTripId)
                 .orElseThrow(() -> new Exception("Không tìm thấy chuyến đi gốc để clone!"));
 
-        // 3. Kiểm tra quyền: Chỉ được clone nếu chuyến đi đó đang Public và đã được Approve
         if (!originalTrip.getIsPublic() || !"APPROVED".equals(originalTrip.getPublicStatus())) {
-            // Cho phép clone nếu chính là chuyến đi của mình (tuỳ thuộc vào luồng nghiệp vụ bạn muốn)
             if (!originalTrip.getUser().getId().equals(currentUser.getId())) {
                 throw new Exception("Bạn không có quyền nhân bản chuyến đi này vì nó chưa được công khai!");
             }
         }
 
-        // 4. Bắt đầu Clone Trip (Tạo mới hoàn toàn chứ không update)
         Trip clonedTrip = new Trip();
         clonedTrip.setUser(currentUser);
         clonedTrip.setTitle("Bản sao của: " + originalTrip.getTitle());
+        clonedTrip.setDestination(originalTrip.getDestination());
         clonedTrip.setStartDate(originalTrip.getStartDate());
         clonedTrip.setEndDate(originalTrip.getEndDate());
-        clonedTrip.setMemberCount(originalTrip.getMemberCount());
+        clonedTrip.setMemberCount(1);
         clonedTrip.setTotalBudget(originalTrip.getTotalBudget());
-        clonedTrip.setIsPublic(false); // Bản clone ban đầu phải là private
+        clonedTrip.setIsPublic(false);
+        clonedTrip.setVisibility("PRIVATE");
         clonedTrip.setPublicStatus("DRAFT");
-        clonedTrip.setClonedFromTripId(originalTrip.getId()); // Lưu vết: Clone từ đâu
+        clonedTrip.setClonedFromTripId(originalTrip.getId());
 
-        // Lưu chuyến đi clone vào DB để lấy được ID mới
         Trip savedClonedTrip = tripRepository.save(clonedTrip);
 
-        // 5. Clone từng Ngày (TripDay)
         List<TripDay> originalDays = originalTrip.getTripDays();
         if (originalDays != null && !originalDays.isEmpty()) {
             for (TripDay originalDay : originalDays) {
                 TripDay clonedDay = new TripDay();
-                clonedDay.setTrip(savedClonedTrip); // Gắn vào Trip vừa clone
+                clonedDay.setTrip(savedClonedTrip);
                 clonedDay.setDayNumber(originalDay.getDayNumber());
                 clonedDay.setDayDate(originalDay.getDayDate());
 
                 TripDay savedClonedDay = tripDayRepository.save(clonedDay);
 
-                // 6. Clone từng Điểm đến (TripDestination) trong Ngày đó
                 List<TripDestination> originalDestinations = originalDay.getDestinations();
                 if (originalDestinations != null && !originalDestinations.isEmpty()) {
                     for (TripDestination originalDest : originalDestinations) {
                         TripDestination clonedDest = new TripDestination();
-                        clonedDest.setTripDay(savedClonedDay); // Gắn vào Day vừa clone
+                        clonedDest.setTripDay(savedClonedDay);
                         clonedDest.setPlaceName(originalDest.getPlaceName());
                         clonedDest.setLatitude(originalDest.getLatitude());
                         clonedDest.setLongitude(originalDest.getLongitude());
@@ -137,7 +200,6 @@ public class TripService {
             }
         }
 
-        // Trả về bản sao đã hoàn thiện (để cẩn thận, có thể query lại từ db để lấy full data trả về)
         return getTripDetails(savedClonedTrip.getId(), currentUserEmail);
     }
 }
