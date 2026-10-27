@@ -63,4 +63,10 @@ public class Trip {
 
     @Column(name = "public_status")
     private String publicStatus = "DRAFT"; // DRAFT, PENDING, APPROVED, REJECTED
+
+    @Column(name = "average_rating")
+    private Double averageRating = 0.0;
+
+    @Column(name = "total_reviews")
+    private Integer totalReviews = 0;
 }

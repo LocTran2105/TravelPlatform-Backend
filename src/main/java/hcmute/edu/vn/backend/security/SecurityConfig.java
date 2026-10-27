@@ -3,6 +3,7 @@ package hcmute.edu.vn.backend.security;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -35,10 +36,13 @@ public class SecurityConfig {
                         // Gộp chung các API public (không cần đăng nhập) vào 1 dòng hoặc để liên tiếp
                         .requestMatchers("/api/auth/**", "/api/public/**", "/api/map/alerts/approved").permitAll()
 
+                        // Cấu hình xem đánh giá Public phải nằm Ở ĐÂY
+                        .requestMatchers(HttpMethod.GET, "/api/trips/*/reviews").permitAll()
+
                         // API yêu cầu quyền Admin
                         .requestMatchers("/api/admin/**").hasAuthority("ROLE_ADMIN")
 
-                        // Các API còn lại bắt buộc đăng nhập (Token hợp lệ)
+                        // Các API còn lại bắt buộc đăng nhập (Token hợp lệ) - BẮT BUỘC ĐỂ DƯỚI CÙNG
                         .anyRequest().authenticated()
                 );
 

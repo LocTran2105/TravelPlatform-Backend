@@ -1,7 +1,11 @@
 package hcmute.edu.vn.backend.repository;
 
 import hcmute.edu.vn.backend.entity.TripReview;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -14,4 +18,7 @@ public interface TripReviewRepository extends JpaRepository<TripReview, Long> {
 
     // Kiểm tra xem user này đã đánh giá chuyến đi này chưa (để chặn spam)
     Optional<TripReview> findByTripIdAndUserId(Long tripId, Long userId);
+
+    @Query("SELECT r FROM TripReview r JOIN FETCH r.user WHERE r.trip.id = :tripId ORDER BY r.createdAt DESC")
+    Page<TripReview> findByTripIdWithUser(@Param("tripId") Long tripId, Pageable pageable);
 }
