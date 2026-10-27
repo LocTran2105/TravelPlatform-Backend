@@ -16,6 +16,7 @@ public class TripSocialController {
 
     @Autowired
     private TripReviewService tripReviewService;
+
     @Autowired
     private TripCommentService tripCommentService;
 
@@ -26,15 +27,25 @@ public class TripSocialController {
             @RequestBody ReviewRequest request,
             Principal principal) {
         try {
-            return ResponseEntity.ok(tripReviewService.addReview(tripId, request, principal.getName()));
+            // FIX 1: Đổi addReview thành addOrUpdateReview
+            return ResponseEntity.ok(tripReviewService.addOrUpdateReview(tripId, request, principal.getName()));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body("Lỗi: " + e.getMessage());
         }
     }
 
     @GetMapping("/reviews")
-    public ResponseEntity<?> getReviews(@PathVariable Long tripId) {
-        return ResponseEntity.ok(tripReviewService.getReviewsByTrip(tripId));
+    public ResponseEntity<?> getReviews(
+            @PathVariable Long tripId,
+            // FIX 2: Thêm tham số phân trang (page, size) mặc định
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "5") int size) {
+        try {
+            // Cập nhật truyền page và size vào service
+            return ResponseEntity.ok(tripReviewService.getReviewsByTrip(tripId, page, size));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("Lỗi: " + e.getMessage());
+        }
     }
 
     // ============ COMMENTS ============
