@@ -16,13 +16,16 @@ public class Image {
     private Long id;
 
     @Column(name = "entity_type", nullable = false)
-    private String entityType; // TRIP, TRIP_DESTINATION, HOTEL, CUSTOM_PLACE, ALERT
+    private String entityType; // Sẽ nhận các giá trị: TRIP, POST, HOTEL, CUSTOM_PLACE
 
     @Column(name = "entity_id", nullable = false)
     private Long entityId;
 
     @Column(name = "image_url", nullable = false)
-    private String imageUrl;
+    private String imageUrl; // Chứa đường link trả về từ Cloudinary
+
+    @Column(name = "media_type")
+    private String mediaType = "IMAGE"; // Phân biệt IMAGE hoặc VIDEO để Frontend render thẻ <img> hay <video>
 
     private String caption;
 
