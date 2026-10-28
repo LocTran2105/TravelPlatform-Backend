@@ -36,6 +36,9 @@ public class SecurityConfig {
                         // Gộp chung các API public (không cần đăng nhập) vào 1 dòng hoặc để liên tiếp
                         .requestMatchers("/api/auth/**", "/api/public/**", "/api/map/alerts/approved").permitAll()
 
+                        // Cho phép tất cả mọi người XEM danh sách bài đăng
+                        .requestMatchers(HttpMethod.GET, "/api/posts").permitAll()
+
                         // Cấu hình xem đánh giá Public phải nằm Ở ĐÂY
                         .requestMatchers(HttpMethod.GET, "/api/trips/*/reviews").permitAll()
 
