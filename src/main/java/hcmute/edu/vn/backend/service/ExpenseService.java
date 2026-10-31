@@ -1,149 +1,278 @@
 package hcmute.edu.vn.backend.service;
 
+import hcmute.edu.vn.backend.dto.ExpenseOverviewResponse;
 import hcmute.edu.vn.backend.dto.ExpenseRequest;
-import hcmute.edu.vn.backend.entity.Expense;
-import hcmute.edu.vn.backend.entity.ExpenseSplit;
-import hcmute.edu.vn.backend.entity.Trip;
-import hcmute.edu.vn.backend.entity.User;
-import hcmute.edu.vn.backend.repository.ExpenseRepository;
-import hcmute.edu.vn.backend.repository.ExpenseSplitRepository;
-import hcmute.edu.vn.backend.repository.TripRepository;
-import hcmute.edu.vn.backend.repository.UserRepository;
+import hcmute.edu.vn.backend.dto.ExpenseResponse;
+import hcmute.edu.vn.backend.dto.SettlementResponse;
+import hcmute.edu.vn.backend.entity.*;
+import hcmute.edu.vn.backend.repository.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.util.*;
 
 @Service
 public class ExpenseService {
 
+    private static final BigDecimal MAX_MONEY = new BigDecimal("1000000000000");
+    private static final Set<String> CATEGORIES = Set.of(
+            "FLIGHTS", "LODGING", "CAR_RENTAL", "TRANSIT", "FOOD", "DRINKS",
+            "SIGHTSEEING", "ACTIVITIES", "SHOPPING", "GAS", "GROCERIES", "OTHER");
+
     @Autowired
     private ExpenseRepository expenseRepository;
-    @Autowired
-    private ExpenseSplitRepository expenseSplitRepository;
     @Autowired
     private TripRepository tripRepository;
     @Autowired
     private UserRepository userRepository;
+    @Autowired
+    private TripMemberRepository tripMemberRepository;
+    @Autowired
+    private TripDestinationRepository tripDestinationRepository;
 
-    // 1. Logic Thêm một khoản chi tiêu mới
-    @Transactional(rollbackFor = Exception.class)
-    public Expense addExpense(Long tripId, ExpenseRequest request, String payerEmail) throws Exception {
+    // ==========================================
+    // HÀM HỖ TRỢ
+    // ==========================================
+
+    // Chỉ chủ chuyến đi hoặc thành viên mới được xem/sửa chi phí
+    private Trip loadTripForMember(Long tripId, String email) throws Exception {
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new Exception("Không tìm thấy chuyến đi!"));
+        boolean isOwner = trip.getUser().getEmail().equalsIgnoreCase(email);
+        boolean isMember = tripMemberRepository.existsByTripIdAndUserEmail(tripId, email);
+        if (!isOwner && !isMember) {
+            throw new Exception("Bạn không có quyền truy cập chi phí của chuyến đi này!");
+        }
+        return trip;
+    }
 
-        User payer = userRepository.findByEmail(payerEmail)
-                .orElseThrow(() -> new Exception("Người trả tiền không hợp lệ!"));
+    // Thành viên chuyến đi, luôn gồm cả chủ chuyến đi (chuyến đi nhân bản chưa có bản ghi trip_members cho chủ)
+    private Map<Long, User> getMembers(Trip trip) {
+        Map<Long, User> members = new LinkedHashMap<>();
+        members.put(trip.getUser().getId(), trip.getUser());
+        for (TripMember m : tripMemberRepository.findByTripId(trip.getId())) {
+            members.putIfAbsent(m.getUser().getId(), m.getUser());
+        }
+        return members;
+    }
 
-        // Tạo bản ghi Expense (Tổng khoản chi)
+    private LocalDate effectiveDate(Expense e) {
+        if (e.getExpenseDate() != null) return e.getExpenseDate();
+        if (e.getCreatedAt() != null) return e.getCreatedAt().toLocalDate();
+        return LocalDate.MIN;
+    }
+
+    private ExpenseResponse toResponse(Expense e) {
+        List<ExpenseResponse.SplitInfo> splits = e.getSplits().stream()
+                .map(s -> new ExpenseResponse.SplitInfo(s.getUser().getId(), s.getUser().getFullName(), s.getAmountOwed()))
+                .toList();
+        LocalDate date = e.getExpenseDate() != null ? e.getExpenseDate()
+                : (e.getCreatedAt() != null ? e.getCreatedAt().toLocalDate() : null);
+        return new ExpenseResponse(
+                e.getId(), e.getTitle(), e.getCategory(), e.getDescription(), e.getAmount(), date,
+                e.getTripDestination() != null ? e.getTripDestination().getId() : null,
+                e.getPayer().getId(), e.getPayer().getFullName(), e.getPayer().getAvatar(),
+                splits, e.getCreatedAt());
+    }
+
+    // ==========================================
+    // 1. THÊM MỘT KHOẢN CHI
+    // ==========================================
+    @Transactional(rollbackFor = Exception.class)
+    public ExpenseResponse addExpense(Long tripId, ExpenseRequest request, String email) throws Exception {
+        Trip trip = loadTripForMember(tripId, email);
+        User currentUser = userRepository.findByEmail(email)
+                .orElseThrow(() -> new Exception("Không tìm thấy người dùng!"));
+        Map<Long, User> members = getMembers(trip);
+
+        // Số tiền: VNĐ nguyên đồng, lớn hơn 0
+        if (request.getAmount() == null) throw new Exception("Vui lòng nhập số tiền!");
+        BigDecimal amount = request.getAmount().setScale(0, RoundingMode.HALF_UP);
+        if (amount.signum() <= 0) throw new Exception("Số tiền phải lớn hơn 0!");
+        if (amount.compareTo(MAX_MONEY) > 0) throw new Exception("Số tiền quá lớn!");
+
+        // Người trả tiền: mặc định là người đang đăng nhập, nếu chọn người khác thì phải là thành viên
+        User payer = currentUser;
+        if (request.getPayerId() != null) {
+            payer = members.get(request.getPayerId());
+            if (payer == null) throw new Exception("Người trả tiền phải là thành viên của chuyến đi!");
+        }
+
+        // Địa điểm trong lịch trình (nếu có) phải thuộc chuyến đi này
+        TripDestination destination = null;
+        if (request.getTripDestinationId() != null) {
+            destination = tripDestinationRepository.findById(request.getTripDestinationId())
+                    .orElseThrow(() -> new Exception("Không tìm thấy địa điểm trong lịch trình!"));
+            if (!destination.getTripDay().getTrip().getId().equals(tripId)) {
+                throw new Exception("Địa điểm không thuộc chuyến đi này!");
+            }
+        }
+
+        // Danh mục
+        String category = (request.getCategory() == null || request.getCategory().isBlank())
+                ? "OTHER" : request.getCategory().trim().toUpperCase();
+        if (!CATEGORIES.contains(category)) throw new Exception("Danh mục chi phí không hợp lệ!");
+
+        // Tên hiển thị
+        String title = (request.getTitle() != null && !request.getTitle().isBlank())
+                ? request.getTitle().trim()
+                : (destination != null ? destination.getPlaceName() : category);
+        if (title.length() > 255) title = title.substring(0, 255);
+
+        // Những người cùng chịu chi phí: trống = "Không chia" (người trả tự chịu toàn bộ)
+        List<Long> splitIds = request.getSplitUserIds() == null ? List.of()
+                : request.getSplitUserIds().stream().filter(Objects::nonNull).distinct().toList();
+        List<User> debtors = new ArrayList<>();
+        if (splitIds.isEmpty()) {
+            debtors.add(payer);
+        } else {
+            for (Long id : splitIds) {
+                User u = members.get(id);
+                if (u == null) throw new Exception("Người được chia tiền phải là thành viên của chuyến đi!");
+                debtors.add(u);
+            }
+        }
+
         Expense expense = new Expense();
         expense.setTrip(trip);
-        expense.setPayer(payer); // Người ứng tiền
-        expense.setTitle(request.getTitle());
-        expense.setAmount(request.getAmount());
+        expense.setTripDestination(destination);
+        expense.setPayer(payer);
+        expense.setTitle(title);
+        expense.setCategory(category);
+        expense.setDescription(request.getDescription() != null && !request.getDescription().isBlank()
+                ? request.getDescription().trim() : null);
+        expense.setAmount(amount);
+        expense.setExpenseDate(request.getExpenseDate() != null ? request.getExpenseDate() : LocalDate.now());
 
-        Expense savedExpense = expenseRepository.save(expense);
-
-        // Tạo các bản ghi ExpenseSplit (Chia đều cho những người tham gia)
-        int numberOfPeople = request.getSplitUserIds().size();
-        if (numberOfPeople == 0) throw new Exception("Phải có ít nhất 1 người chia sẻ khoản tiền!");
-
-        // Tính tiền mỗi người phải chịu (chia đều, làm tròn 2 chữ số)
-        BigDecimal amountPerPerson = request.getAmount().divide(new BigDecimal(numberOfPeople), 2, RoundingMode.HALF_UP);
-
-        List<ExpenseSplit> splits = new ArrayList<>();
-        for (Long userId : request.getSplitUserIds()) {
-            User debtor = userRepository.findById(userId)
-                    .orElseThrow(() -> new Exception("Không tìm thấy user id: " + userId));
-
+        // Chia đều theo đồng; phần dư (mỗi người 1đ) dồn cho những người đứng đầu danh sách
+        // => tổng các phần chia luôn đúng bằng số tiền của khoản chi
+        BigDecimal count = BigDecimal.valueOf(debtors.size());
+        BigDecimal base = amount.divide(count, 0, RoundingMode.DOWN);
+        int remainder = amount.subtract(base.multiply(count)).intValueExact();
+        for (int i = 0; i < debtors.size(); i++) {
             ExpenseSplit split = new ExpenseSplit();
-            split.setExpense(savedExpense);
-            split.setUser(debtor);
-            split.setAmountOwed(amountPerPerson);
-            splits.add(split);
+            split.setExpense(expense);
+            split.setUser(debtors.get(i));
+            split.setAmountOwed(i < remainder ? base.add(BigDecimal.ONE) : base);
+            expense.getSplits().add(split);
         }
 
-        expenseSplitRepository.saveAll(splits);
-        savedExpense.setSplits(splits);
-        return savedExpense;
+        return toResponse(expenseRepository.save(expense));
     }
 
     // ==========================================
-    // 2. THUẬT TOÁN TÍNH TOÁN BÁO CÁO TRẢ NỢ CUỐI CÙNG
+    // 2. DỮ LIỆU TAB NGÂN SÁCH
     // ==========================================
-    public List<String> calculateDebts(Long tripId, String requestUserEmail) throws Exception {
-        Trip trip = tripRepository.findById(tripId)
-                .orElseThrow(() -> new Exception("Không tìm thấy chuyến đi!"));
+    @Transactional(readOnly = true)
+    public ExpenseOverviewResponse getOverview(Long tripId, String email) throws Exception {
+        Trip trip = loadTripForMember(tripId, email);
+        User current = userRepository.findByEmail(email)
+                .orElseThrow(() -> new Exception("Không tìm thấy người dùng!"));
 
-        List<Expense> allExpenses = expenseRepository.findByTripId(tripId);
+        List<Expense> expenses = new ArrayList<>(expenseRepository.findAllWithDetailsByTripId(tripId));
+        Comparator<Expense> byDate = Comparator.comparing(this::effectiveDate);
+        expenses.sort(byDate.thenComparing(Expense::getId).reversed()); // mới nhất trước
 
-        // Map lưu Số dư của mỗi người (Balance).
-        // Số dư = Tiền mình ứng ra trả giúp người khác - Tiền mình nợ người khác
-        Map<String, BigDecimal> balances = new HashMap<>();
+        BigDecimal total = expenses.stream().map(Expense::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+        List<ExpenseOverviewResponse.MemberInfo> members = getMembers(trip).values().stream()
+                .map(u -> new ExpenseOverviewResponse.MemberInfo(u.getId(), u.getFullName(), u.getAvatar()))
+                .toList();
 
-        for (Expense exp : allExpenses) {
-            String payerName = exp.getPayer().getFullName();
+        return new ExpenseOverviewResponse(current.getId(), total, members,
+                expenses.stream().map(this::toResponse).toList());
+    }
 
-            // Người trả tiền được CỘNG thêm tổng số tiền
-            balances.put(payerName, balances.getOrDefault(payerName, BigDecimal.ZERO).add(exp.getAmount()));
+    // ==========================================
+    // 3. XOÁ KHOẢN CHI (người trả tiền hoặc chủ chuyến đi)
+    // ==========================================
+    @Transactional(rollbackFor = Exception.class)
+    public void deleteExpense(Long tripId, Long expenseId, String email) throws Exception {
+        Trip trip = loadTripForMember(tripId, email);
+        Expense expense = expenseRepository.findById(expenseId)
+                .orElseThrow(() -> new Exception("Không tìm thấy khoản chi!"));
+        if (!expense.getTrip().getId().equals(tripId)) {
+            throw new Exception("Khoản chi không thuộc chuyến đi này!");
+        }
+        boolean isOwner = trip.getUser().getEmail().equalsIgnoreCase(email);
+        boolean isPayer = expense.getPayer().getEmail().equalsIgnoreCase(email);
+        if (!isOwner && !isPayer) {
+            throw new Exception("Chỉ người trả tiền hoặc chủ chuyến đi mới được xóa khoản chi này!");
+        }
+        expenseRepository.delete(expense);
+    }
 
-            // Những người thụ hưởng bị TRỪ đi phần tiền phải chịu
+    // ==========================================
+    // 4. CÂN ĐỐI NHÓM (ai nợ ai bao nhiêu, ít giao dịch nhất)
+    // ==========================================
+    @Transactional(readOnly = true)
+    public SettlementResponse calculateSettlement(Long tripId, String email) throws Exception {
+        Trip trip = loadTripForMember(tripId, email);
+
+        // Tính theo id người dùng (không theo tên, vì 2 người có thể trùng họ tên)
+        Map<Long, User> users = new LinkedHashMap<>(getMembers(trip));
+        Map<Long, BigDecimal> balances = new LinkedHashMap<>();
+        users.keySet().forEach(id -> balances.put(id, BigDecimal.ZERO));
+
+        // Số dư = tiền mình ứng ra - phần mình phải chịu
+        for (Expense exp : expenseRepository.findAllWithDetailsByTripId(tripId)) {
+            User payer = exp.getPayer();
+            users.putIfAbsent(payer.getId(), payer);
+            balances.merge(payer.getId(), exp.getAmount(), BigDecimal::add);
             for (ExpenseSplit split : exp.getSplits()) {
-                String debtorName = split.getUser().getFullName();
-                balances.put(debtorName, balances.getOrDefault(debtorName, BigDecimal.ZERO).subtract(split.getAmountOwed()));
+                User u = split.getUser();
+                users.putIfAbsent(u.getId(), u);
+                balances.merge(u.getId(), split.getAmountOwed().negate(), BigDecimal::add);
             }
         }
 
-        // Tách ra 2 danh sách: Những người nợ tiền (Balance < 0) và Những người cho nợ (Balance > 0)
         PriorityQueue<BalanceNode> debtors = new PriorityQueue<>((a, b) -> b.amount.compareTo(a.amount));
         PriorityQueue<BalanceNode> creditors = new PriorityQueue<>((a, b) -> b.amount.compareTo(a.amount));
-
-        for (Map.Entry<String, BigDecimal> entry : balances.entrySet()) {
-            if (entry.getValue().compareTo(BigDecimal.ZERO) < 0) {
-                debtors.add(new BalanceNode(entry.getKey(), entry.getValue().abs()));
-            } else if (entry.getValue().compareTo(BigDecimal.ZERO) > 0) {
-                creditors.add(new BalanceNode(entry.getKey(), entry.getValue()));
-            }
+        for (Map.Entry<Long, BigDecimal> entry : balances.entrySet()) {
+            int sign = entry.getValue().signum();
+            if (sign < 0) debtors.add(new BalanceNode(entry.getKey(), entry.getValue().negate()));
+            else if (sign > 0) creditors.add(new BalanceNode(entry.getKey(), entry.getValue()));
         }
 
-        // Bắt đầu ghép cặp trả tiền
-        List<String> settlementReport = new ArrayList<>();
-
+        // Ghép người nợ nhiều nhất với người được nợ nhiều nhất
+        List<SettlementResponse.TransferInfo> transfers = new ArrayList<>();
         while (!debtors.isEmpty() && !creditors.isEmpty()) {
-            BalanceNode debtor = debtors.poll(); // Người nợ nhiều nhất
-            BalanceNode creditor = creditors.poll(); // Người được nợ nhiều nhất
+            BalanceNode debtor = debtors.poll();
+            BalanceNode creditor = creditors.poll();
+            BigDecimal pay = debtor.amount.min(creditor.amount);
 
-            // Tính số tiền có thể chuyển ngay lập tức
-            BigDecimal amountToSettle = debtor.amount.min(creditor.amount);
+            User from = users.get(debtor.userId);
+            User to = users.get(creditor.userId);
+            transfers.add(new SettlementResponse.TransferInfo(
+                    from.getId(), from.getFullName(), to.getId(), to.getFullName(), pay));
 
-            settlementReport.add(debtor.name + " cần chuyển cho " + creditor.name + ": " + amountToSettle + " VNĐ");
-
-            // Cập nhật lại số dư sau khi chuyển khoản
-            debtor.amount = debtor.amount.subtract(amountToSettle);
-            creditor.amount = creditor.amount.subtract(amountToSettle);
-
-            // Nếu người này chưa trả/nhận hết tiền, đẩy lại vào hàng đợi
-            if (debtor.amount.compareTo(BigDecimal.ZERO) > 0) debtors.add(debtor);
-            if (creditor.amount.compareTo(BigDecimal.ZERO) > 0) creditors.add(creditor);
+            debtor.amount = debtor.amount.subtract(pay);
+            creditor.amount = creditor.amount.subtract(pay);
+            if (debtor.amount.signum() > 0) debtors.add(debtor);
+            if (creditor.amount.signum() > 0) creditors.add(creditor);
         }
 
-        if (settlementReport.isEmpty()) {
-            settlementReport.add("Tuyệt vời! Không ai nợ ai, mọi khoản tiền đã được chia đều.");
-        }
+        List<SettlementResponse.BalanceInfo> balanceList = balances.entrySet().stream()
+                .map(en -> {
+                    User u = users.get(en.getKey());
+                    return new SettlementResponse.BalanceInfo(u.getId(), u.getFullName(), u.getAvatar(), en.getValue());
+                })
+                .sorted((a, b) -> b.getBalance().compareTo(a.getBalance()))
+                .toList();
 
-        return settlementReport;
+        return new SettlementResponse(balanceList, transfers);
     }
 
-    // Helper class phục vụ thuật toán (lưu tên và số dư)
+    // Lưu id và số dư (phục vụ thuật toán ghép cặp)
     private static class BalanceNode {
-        String name;
+        Long userId;
         BigDecimal amount;
 
-        BalanceNode(String name, BigDecimal amount) {
-            this.name = name;
+        BalanceNode(Long userId, BigDecimal amount) {
+            this.userId = userId;
             this.amount = amount;
         }
     }

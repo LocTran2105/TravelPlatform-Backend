@@ -2,6 +2,8 @@ package hcmute.edu.vn.backend.dto;
 
 import lombok.Getter; import lombok.Setter;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Getter @Setter
 public class PlaceReviewResponse {
@@ -13,4 +15,5 @@ public class PlaceReviewResponse {
     private LocalDateTime createdAt;
     private long likesCount;
     private boolean isLikedByMe; // True nếu user hiện tại đã thả tim đánh giá này
+    private List<ReviewMediaDto> media = new ArrayList<>(); // Ảnh/video đính kèm
 }

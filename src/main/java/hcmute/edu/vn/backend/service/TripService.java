@@ -142,6 +142,32 @@ public class TripService {
         return trip;
     }
 
+    // 3b. Cập nhật tổng ngân sách (Chủ chuyến đi hoặc thành viên được phép chỉnh sửa)
+    private static final BigDecimal MAX_MONEY = new BigDecimal("1000000000000");
+
+    @Transactional
+    public BigDecimal updateBudget(Long tripId, BigDecimal totalBudget, String userEmail) throws Exception {
+        if (totalBudget == null || totalBudget.signum() < 0) {
+            throw new Exception("Ngân sách phải lớn hơn hoặc bằng 0!");
+        }
+        if (totalBudget.compareTo(MAX_MONEY) > 0) {
+            throw new Exception("Ngân sách quá lớn!");
+        }
+
+        Trip trip = tripRepository.findById(tripId)
+                .orElseThrow(() -> new Exception("Không tìm thấy chuyến đi!"));
+
+        boolean isOwner = trip.getUser().getEmail().equalsIgnoreCase(userEmail);
+        boolean isCompanion = tripMemberRepository.existsByTripIdAndUserEmail(tripId, userEmail);
+        if (!isOwner && !isCompanion) {
+            throw new Exception("Bạn không có quyền chỉnh sửa ngân sách chuyến đi này!");
+        }
+
+        trip.setTotalBudget(totalBudget);
+        tripRepository.save(trip);
+        return trip.getTotalBudget();
+    }
+
     // 4. Nhân bản lịch trình
     @Transactional
     public Trip cloneTrip(Long originalTripId, String currentUserEmail) throws Exception {

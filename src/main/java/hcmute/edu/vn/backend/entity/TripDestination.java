@@ -35,4 +35,13 @@ public class TripDestination {
 
     @Column(name = "order_index")
     private Integer orderIndex;
+
+    @Column(name = "is_visited")
+    private Boolean isVisited = false;
+
+    @Column(name = "time_range")
+    private String timeRange;
+
+    @Column(name = "cost")
+    private String cost;
 }

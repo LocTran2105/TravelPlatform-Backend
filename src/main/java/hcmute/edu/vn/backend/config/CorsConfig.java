@@ -10,6 +10,6 @@ public class CorsConfig implements WebMvcConfigurer {
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/api/**") // Cho phép tất cả API
                 .allowedOrigins("http://localhost:5173") // Cho phép React truy cập
-                .allowedMethods("GET", "POST", "PUT", "DELETE");
+                .allowedMethods("GET", "POST", "PUT", "DELETE", "PATCH");
     }
 }
