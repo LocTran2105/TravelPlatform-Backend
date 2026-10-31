@@ -1,5 +1,6 @@
 package hcmute.edu.vn.backend.controller;
 
+import hcmute.edu.vn.backend.dto.BudgetRequest;
 import hcmute.edu.vn.backend.dto.TripRequest;
 import hcmute.edu.vn.backend.service.TripService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -40,6 +41,16 @@ public class TripController {
     public ResponseEntity<?> getTripDetails(@PathVariable Long tripId, Principal principal) {
         try {
             return ResponseEntity.ok(tripService.getTripDetails(tripId, principal.getName()));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("Lỗi: " + e.getMessage());
+        }
+    }
+
+    // API 3b: Cập nhật tổng ngân sách của chuyến đi
+    @PatchMapping("/{tripId}/budget")
+    public ResponseEntity<?> updateBudget(@PathVariable Long tripId, @RequestBody BudgetRequest request, Principal principal) {
+        try {
+            return ResponseEntity.ok(tripService.updateBudget(tripId, request.getTotalBudget(), principal.getName()));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body("Lỗi: " + e.getMessage());
         }

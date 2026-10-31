@@ -27,4 +27,17 @@ public class TripDestinationController {
             return ResponseEntity.badRequest().body("Lỗi: " + e.getMessage());
         }
     }
+    public static class UpdateFieldRequest {
+        public String field;
+        public Object value;
+    }
+    @PatchMapping("/destinations/{destinationId}")
+    public ResponseEntity<?> updateDestinationProperty(@PathVariable Long destinationId, @RequestBody UpdateFieldRequest request, Principal principal) {
+        try {
+            tripDestinationService.updateDestinationProperty(destinationId, request.field, request.value, principal.getName());
+            return ResponseEntity.ok("Cập nhật thành công!");
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
 }
