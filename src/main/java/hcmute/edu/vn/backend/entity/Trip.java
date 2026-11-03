@@ -69,4 +69,8 @@ public class Trip {
 
     @Column(name = "total_reviews")
     private Integer totalReviews = 0;
+
+    // Thêm đoạn này vào bên trong class Trip.java
+    @OneToOne(mappedBy = "trip", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    private TripPreference preference;
 }
