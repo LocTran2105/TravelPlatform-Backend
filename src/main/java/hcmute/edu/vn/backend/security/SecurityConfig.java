@@ -47,6 +47,8 @@ public class SecurityConfig {
                         // API yêu cầu quyền Admin
                         .requestMatchers("/api/admin/**").hasAuthority("ROLE_ADMIN")
 
+                        //test
+                        .requestMatchers("/api/auth/**", "/api/public/**", "/api/map/alerts/approved", "/error").permitAll()
                         // Các API còn lại bắt buộc đăng nhập (Token hợp lệ) - BẮT BUỘC ĐỂ DƯỚI CÙNG
                         .anyRequest().authenticated()
                 );

@@ -10,9 +10,7 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 
 @Service
 public class TripService {
@@ -76,20 +74,33 @@ public class TripService {
         trip.getMembers().add(ownerMember); // Đưa vào mảng thay vì gọi Repository.save()
 
         if (request.getCompanionEmails() != null && !request.getCompanionEmails().isEmpty()) {
+            List<String> notFoundEmails = new ArrayList<>();
+            Set<String> seenEmails = new HashSet<>();
+
             for (String companionEmail : request.getCompanionEmails()) {
+                if (companionEmail == null) continue;
                 String cleanEmail = companionEmail.trim().toLowerCase();
-                if (cleanEmail.equalsIgnoreCase(owner.getEmail())) continue;
+
+                // Bỏ qua email rỗng, email của chủ chuyến đi và email bị trùng
+                if (cleanEmail.isEmpty()
+                        || cleanEmail.equalsIgnoreCase(owner.getEmail())
+                        || !seenEmails.add(cleanEmail)) continue;
 
                 Optional<User> companionOpt = userRepository.findByEmail(cleanEmail);
                 if (companionOpt.isPresent()) {
-                    User companion = companionOpt.get();
                     TripMember member = new TripMember();
                     member.setTrip(trip);
-                    member.setUser(companion);
+                    member.setUser(companionOpt.get());
                     member.setRole("EDITOR");
                     member.setStatus("ACCEPTED");
                     trip.getMembers().add(member);
+                } else {
+                    notFoundEmails.add(cleanEmail);
                 }
+            }
+
+            if (!notFoundEmails.isEmpty()) {
+                throw new Exception("Không tìm thấy tài khoản với email: " + String.join(", ", notFoundEmails));
             }
         }
         trip.setMemberCount(trip.getMembers().size());
@@ -124,7 +135,7 @@ public class TripService {
         User user = userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new Exception("Không tìm thấy người dùng hiện tại!"));
 
-        return tripRepository.findByUserId(user.getId());
+        return tripRepository.findAllTripsOfUser(user.getId());
     }
 
     // 3. Lấy chi tiết toàn bộ chuyến đi (Cho phép Chủ sở hữu, Bạn đồng hành hoặc chuyến đi Public/Friends xem)
@@ -227,5 +238,22 @@ public class TripService {
         }
 
         return getTripDetails(savedClonedTrip.getId(), currentUserEmail);
+    }
+    // 5. Xóa chuyến đi (chỉ chủ chuyến đi mới được xóa)
+    @Transactional
+    public void deleteTrip(Long tripId, String userEmail) throws Exception {
+        Trip trip = tripRepository.findById(tripId)
+                .orElseThrow(() -> new Exception("Không tìm thấy chuyến đi!"));
+
+        if (!trip.getUser().getEmail().equalsIgnoreCase(userEmail)) {
+            throw new Exception("Chỉ chủ chuyến đi mới có quyền xóa chuyến đi này!");
+        }
+
+        tripRepository.delete(trip);
+    }
+    // 6. Kiểm tra email đã đăng ký tài khoản chưa (dùng cho ô Tripmates)
+    public boolean isEmailRegistered(String email) {
+        if (email == null || email.trim().isEmpty()) return false;
+        return userRepository.findByEmail(email.trim().toLowerCase()).isPresent();
     }
 }

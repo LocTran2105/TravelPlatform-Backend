@@ -8,6 +8,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 import java.util.Map;
+import java.util.Objects;
 
 @RestController
 @RequestMapping("/api/users")
@@ -22,6 +23,20 @@ public class UserController {
     // Hàm tiện ích lấy email từ JWT hiện tại
     private String getCurrentUserEmail() {
         return SecurityContextHolder.getContext().getAuthentication().getName();
+    }
+
+    // 0. Lấy thông tin cá nhân (dùng cho xác thực ngầm khi mở app)
+    @GetMapping("/profile")
+    public ResponseEntity<?> getProfile() {
+        String email = getCurrentUserEmail();
+        return userRepository.findByEmail(email)
+                .<ResponseEntity<?>>map(user -> ResponseEntity.ok(Map.of(
+                        "email", user.getEmail(),
+                        "fullName", Objects.toString(user.getFullName(), ""),
+                        "phoneNumber", Objects.toString(user.getPhoneNumber(), ""),
+                        "role", Objects.toString(user.getRole(), "")
+                )))
+                .orElseGet(() -> ResponseEntity.status(404).body("Không tìm thấy người dùng"));
     }
 
     // 1. Cập nhật thông tin cá nhân
