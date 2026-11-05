@@ -8,7 +8,13 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
 
 @Slf4j
 @Component
@@ -19,59 +25,96 @@ public class AiToolExecutor {
             "search_places",
             "search_restaurants",
             "search_accommodations",
+            "verify_place_candidates",
             "calculate_budget"
     );
 
     private final RecommendationService recommendationService;
 
-    @SuppressWarnings("rawtypes")
-    public Object executeTool(String functionName, Map args, TripContextDTO canonicalContext) {
+    public Object executeTool(String functionName, Map<?, ?> args, TripContextDTO canonicalContext) {
         if (!WHITELISTED_TOOLS.contains(functionName)) {
             throw new IllegalArgumentException("Công cụ không nằm trong danh sách cho phép: " + functionName);
         }
 
-        // Luôn ưu tiên destination chuẩn từ DB (Canonical Trip Context), không để Gemini tự ý đổi
-        String canonicalDestination = canonicalContext != null && canonicalContext.getDestination() != null
+        // Trip context loaded from DB is authoritative. Gemini cannot change destination.
+        String canonicalDestination = canonicalContext != null
                 ? canonicalContext.getDestination()
-                : (args != null && args.get("destination") != null ? String.valueOf(args.get("destination")) : "");
+                : null;
+        if ((canonicalDestination == null || canonicalDestination.isBlank())
+                && args != null && args.get("destination") != null) {
+            canonicalDestination = String.valueOf(args.get("destination"));
+        }
 
         Long tripId = canonicalContext != null ? canonicalContext.getTripId() : null;
-        int limit = 5;
-        if (args != null && args.get("limit") instanceof Number n) {
-            limit = Math.min(Math.max(n.intValue(), 1), 10);
-        }
+        int limit = readLimit(args, 5, 10);
 
         return switch (functionName) {
             case "search_places" -> {
-                String category = (args != null && args.get("category") != null)
-                        ? String.valueOf(args.get("category"))
-                        : "TOURIST_ATTRACTION";
-                List<PlaceDiscoveryDTO> results = recommendationService.discoverAndRankPlaces(
+                String category = readString(args, "category", "TOURIST_ATTRACTION");
+                yield recommendationService.discoverAndRankPlaces(
                         tripId, canonicalDestination, category, limit);
-                yield results;
             }
             case "search_restaurants" -> {
-                String type = (args != null && "CAFE".equalsIgnoreCase(String.valueOf(args.get("type"))))
+                String type = "CAFE".equalsIgnoreCase(readString(args, "type", "RESTAURANT"))
                         ? "CAFE" : "RESTAURANT";
-                yield recommendationService.discoverAndRankPlaces(tripId, canonicalDestination, type, limit);
+                yield recommendationService.discoverAndRankPlaces(
+                        tripId, canonicalDestination, type, limit);
             }
-            case "search_accommodations" ->
-                    recommendationService.discoverAndRankPlaces(tripId, canonicalDestination, "ACCOMMODATION", limit);
+            case "search_accommodations" -> recommendationService.discoverAndRankPlaces(
+                    tripId, canonicalDestination, "ACCOMMODATION", limit);
+            case "verify_place_candidates" -> {
+                String category = readString(args, "category", "RESTAURANT");
+                List<String> candidateNames = readCandidateNames(args);
+                if (candidateNames.isEmpty()) {
+                    yield Collections.emptyList();
+                }
+                yield recommendationService.discoverNamedPlaces(
+                        tripId, canonicalDestination, category, candidateNames, limit);
+            }
             case "calculate_budget" -> buildBudgetBreakdown(canonicalContext);
             default -> Collections.emptyList();
         };
     }
 
-    private Map<String, Object> buildBudgetBreakdown(TripContextDTO ctx) {
-        if (ctx == null || ctx.getTotalBudget() == null || ctx.getTotalBudget().compareTo(BigDecimal.ZERO) <= 0) {
+    private int readLimit(Map<?, ?> args, int defaultValue, int maxValue) {
+        if (args == null || !(args.get("limit") instanceof Number number)) return defaultValue;
+        return Math.max(1, Math.min(number.intValue(), maxValue));
+    }
+
+    private String readString(Map<?, ?> args, String key, String defaultValue) {
+        if (args == null || args.get(key) == null) return defaultValue;
+        String value = String.valueOf(args.get(key)).trim();
+        return value.isBlank() ? defaultValue : value;
+    }
+
+    private List<String> readCandidateNames(Map<?, ?> args) {
+        if (args == null || !(args.get("candidateNames") instanceof List<?> rawNames)) {
+            return Collections.emptyList();
+        }
+        Set<String> unique = new LinkedHashSet<>();
+        for (Object raw : rawNames) {
+            if (raw == null) continue;
+            String name = String.valueOf(raw).trim();
+            if (!name.isBlank() && name.length() <= 100) unique.add(name);
+            if (unique.size() >= 10) break;
+        }
+        return new ArrayList<>(unique);
+    }
+
+    private Map<String, Object> buildBudgetBreakdown(TripContextDTO context) {
+        if (context == null || context.getTotalBudget() == null
+                || context.getTotalBudget().compareTo(BigDecimal.ZERO) <= 0) {
             return Map.of(
                     "hasBudget", false,
                     "note", "Chuyến đi hiện chưa được thiết lập ngân sách cụ thể."
             );
         }
-        BigDecimal total = ctx.getTotalBudget();
-        int days = (ctx.getTripDays() != null && !ctx.getTripDays().isEmpty()) ? ctx.getTripDays().size() : 1;
-        int members = (ctx.getMemberCount() != null && ctx.getMemberCount() > 0) ? ctx.getMemberCount() : 1;
+
+        BigDecimal total = context.getTotalBudget();
+        int days = context.getTripDays() != null && !context.getTripDays().isEmpty()
+                ? context.getTripDays().size() : 1;
+        int members = context.getMemberCount() != null && context.getMemberCount() > 0
+                ? context.getMemberCount() : 1;
 
         return Map.of(
                 "hasBudget", true,
