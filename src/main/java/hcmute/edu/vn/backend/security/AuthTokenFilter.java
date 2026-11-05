@@ -54,6 +54,11 @@ public class AuthTokenFilter extends OncePerRequestFilter {
 
                     authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                     SecurityContextHolder.getContext().setAuthentication(authentication);
+                } else {
+                    response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                    response.setContentType("application/json;charset=UTF-8");
+                    response.getWriter().write("{\"message\":\"Tài khoản không còn tồn tại trên hệ thống.\"}");
+                    return;
                 }
             }
         } catch (Exception e) {
