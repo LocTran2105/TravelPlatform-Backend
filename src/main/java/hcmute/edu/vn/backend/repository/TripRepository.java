@@ -2,6 +2,8 @@ package hcmute.edu.vn.backend.repository;
 
 import hcmute.edu.vn.backend.entity.Trip;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -14,4 +16,12 @@ public interface TripRepository extends JpaRepository<Trip, Long> {
 
     // Dành cho Mạng xã hội: Lấy các chuyến đi được bật Public VÀ đã được Admin duyệt (APPROVED)
     List<Trip> findByIsPublicTrueAndPublicStatus(String publicStatus);
+
+    @Query("""
+        SELECT DISTINCT t FROM Trip t
+        LEFT JOIN t.members m
+        WHERE t.user.id = :userId
+           OR (m.user.id = :userId AND m.status = 'ACCEPTED')
+        """)
+    List<Trip> findAllTripsOfUser(@Param("userId") Long userId);
 }

@@ -8,6 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.security.Principal;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/trips")
@@ -64,5 +65,21 @@ public class TripController {
         } catch (Exception e) {
             return ResponseEntity.badRequest().body("Lỗi: " + e.getMessage());
         }
+    }
+
+    // API 5: XÓA CHUYẾN ĐI
+    @DeleteMapping("/{tripId}")
+    public ResponseEntity<?> deleteTrip(@PathVariable Long tripId, Principal principal) {
+        try {
+            tripService.deleteTrip(tripId, principal.getName());
+            return ResponseEntity.ok("Đã xóa chuyến đi");
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("Lỗi: " + e.getMessage());
+        }
+    }
+    // API 6: Kiểm tra email bạn đồng hành đã đăng ký chưa
+    @GetMapping("/check-email")
+    public ResponseEntity<?> checkEmail(@RequestParam String email) {
+        return ResponseEntity.ok(Map.of("exists", tripService.isEmailRegistered(email)));
     }
 }
