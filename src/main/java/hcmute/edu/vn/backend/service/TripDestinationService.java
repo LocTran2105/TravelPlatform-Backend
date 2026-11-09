@@ -58,8 +58,17 @@ public class TripDestinationService {
         // ---------------------------------
 
         dest.setPlaceName(request.getPlaceName());
-        dest.setLatitude(request.getLatitude());
-        dest.setLongitude(request.getLongitude());
+        dest.setLatitude(
+                request.getLatitude() != null
+                        ? BigDecimal.valueOf(request.getLatitude())
+                        : null
+        );
+
+        dest.setLongitude(
+                request.getLongitude() != null
+                        ? BigDecimal.valueOf(request.getLongitude())
+                        : null
+        );
         dest.setNote(request.getNote());
         dest.setEstimatedCost(request.getEstimatedCost());
         dest.setOrderIndex(request.getOrderIndex());

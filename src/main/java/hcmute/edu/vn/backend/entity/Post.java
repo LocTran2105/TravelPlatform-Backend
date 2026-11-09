@@ -1,8 +1,23 @@
 package hcmute.edu.vn.backend.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import jakarta.persistence.*;
-import lombok.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.Table;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
@@ -12,12 +27,19 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 public class Post {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // Bỏ qua các trường nhạy cảm hoặc vòng lặp của User khi trả về JSON
-    @JsonIgnoreProperties({"passwordHash", "hibernateLazyInitializer", "handler"})
+    // Không trả thông tin nhạy cảm của User ra JSON.
+    @JsonIgnoreProperties({
+            "passwordHash",
+            "resetPasswordToken",
+            "tokenExpiryDate",
+            "hibernateLazyInitializer",
+            "handler"
+    })
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
@@ -25,14 +47,52 @@ public class Post {
     @Column(columnDefinition = "TEXT")
     private String caption;
 
-    @Column(name = "location_name")
-    private String locationName; // Tên địa điểm (VD: Chợ Bến Thành)
+    @Column(name = "location_name", length = 255)
+    private String locationName;
 
-    private Double latitude;
-    private Double longitude;
+    @Column(name = "latitude", precision = 10, scale = 7)
+    private BigDecimal latitude;
 
-    private Integer rating; // Số sao từ 1-5
+    @Column(name = "longitude", precision = 10, scale = 7)
+    private BigDecimal longitude;
 
-    @Column(name = "created_at", insertable = false, updatable = false)
+    private Integer rating;
+
+    // Trạng thái kiểm duyệt bài đăng.
+    // PENDING, APPROVED, REJECTED, HIDDEN.
+    @Column(
+            name = "moderation_status",
+            nullable = false,
+            length = 20
+    )
+    private String moderationStatus = "PENDING";
+
+    // Admin thực hiện kiểm duyệt.
+    @JsonIgnore
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "moderated_by")
+    private User moderatedBy;
+
+    @Column(name = "moderation_note", columnDefinition = "TEXT")
+    private String moderationNote;
+
+    @Column(name = "moderated_at")
+    private LocalDateTime moderatedAt;
+
+    @Column(
+            name = "created_at",
+            insertable = false,
+            updatable = false
+    )
     private LocalDateTime createdAt;
+
+    @PrePersist
+    public void prePersist() {
+
+        if (moderationStatus == null
+                || moderationStatus.isBlank()) {
+
+            moderationStatus = "PENDING";
+        }
+    }
 }

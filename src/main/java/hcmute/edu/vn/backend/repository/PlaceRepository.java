@@ -9,8 +9,20 @@ import java.util.Optional;
 
 @Repository
 public interface PlaceRepository extends JpaRepository<Place, Long> {
+
     List<Place> findByDestinationIgnoreCase(String destination);
-    List<Place> findByDestinationIgnoreCaseAndPlaceTypeIgnoreCase(String destination, String placeType);
+
+    List<Place> findByDestinationIgnoreCaseAndPlaceTypeIgnoreCase(
+            String destination,
+            String placeType
+    );
+
     List<Place> findByPlaceType(String placeType);
+
     Optional<Place> findByProviderAndProviderPlaceId(String provider, String providerPlaceId);
+
+    // Place.partnerBusinessId là FK nullable tới partner_businesses.id.
+    List<Place> findByPartnerBusinessId(Long partnerBusinessId);
+
+    List<Place> findByPartnerBusinessIdAndProvider(Long partnerBusinessId, String provider);
 }

@@ -15,6 +15,7 @@ import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
+import java.math.BigDecimal;
 import java.net.URI;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -327,8 +328,13 @@ public class GeoapifyPlaceDiscoveryService {
         place.setAddress(address);
         place.setDestination(destination);
         place.setPlaceType(category);
-        place.setLatitude(latitude);
-        place.setLongitude(longitude);
+        place.setLatitude(
+                latitude != null ? BigDecimal.valueOf(latitude) : null
+        );
+
+        place.setLongitude(
+                longitude != null ? BigDecimal.valueOf(longitude) : null
+        );
         place.setCategories(categories);
         place.setFetchedAt(LocalDateTime.now());
         if (place.getCurrency() == null) place.setCurrency("VND");

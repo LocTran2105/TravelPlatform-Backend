@@ -1,9 +1,23 @@
 package hcmute.edu.vn.backend.entity;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
-import jakarta.persistence.*;
-import lombok.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.Table;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 
 @Entity
@@ -24,17 +38,13 @@ public class TripDestination {
     @JoinColumn(name = "trip_day_id", nullable = false)
     private TripDay tripDay;
 
-    // ==========================================
-    // CÁC TRƯỜNG MỚI BỔ SUNG CHO AI PLANNER
-    // ==========================================
-
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "place_id")
     private Place place;
 
     @Builder.Default
     @Column(name = "item_type", nullable = false, length = 30)
-    private String itemType = "ATTRACTION"; // ATTRACTION, ACCOMMODATION, RESTAURANT, TRANSPORT...
+    private String itemType = "ATTRACTION";
 
     @Column(name = "start_time")
     private LocalTime startTime;
@@ -42,33 +52,35 @@ public class TripDestination {
     @Column(name = "end_time")
     private LocalTime endTime;
 
-    // ==========================================
-    // CÁC TRƯỜNG CŨ GIỮ NGUYÊN (BACKWARD COMPATIBILITY)
-    // ==========================================
-
-    @Column(name = "place_name", nullable = false)
+    @Column(name = "place_name", nullable = false, length = 255)
     private String placeName;
 
-    private Double latitude;
+    @Column(name = "latitude", precision = 10, scale = 7)
+    private BigDecimal latitude;
 
-    private Double longitude;
+    @Column(name = "longitude", precision = 10, scale = 7)
+    private BigDecimal longitude;
 
-    @Column(columnDefinition = "TEXT")
+    @Column(name = "note", columnDefinition = "TEXT")
     private String note;
 
-    @Column(name = "estimated_cost")
+    @Column(name = "estimated_cost", precision = 15, scale = 2)
     private BigDecimal estimatedCost;
 
     @Column(name = "order_index")
     private Integer orderIndex;
 
     @Builder.Default
-    @Column(name = "is_visited")
+    @Column(name = "is_visited", nullable = false)
     private Boolean isVisited = false;
 
-    @Column(name = "time_range")
+    // Legacy display fields are retained because the current frontend may use them.
+    @Column(name = "time_range", length = 100)
     private String timeRange;
 
-    @Column(name = "cost")
+    @Column(name = "cost", length = 100)
     private String cost;
+
+    @Column(name = "created_at", insertable = false, updatable = false)
+    private LocalDateTime createdAt;
 }

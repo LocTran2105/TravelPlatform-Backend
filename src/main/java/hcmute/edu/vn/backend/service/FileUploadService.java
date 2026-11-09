@@ -1,25 +1,48 @@
 package hcmute.edu.vn.backend.service;
 
-import com.cloudinary.Cloudinary;
-import com.cloudinary.utils.ObjectUtils;
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.util.Map;
+import java.util.Locale;
 
 @Service
+@RequiredArgsConstructor
 public class FileUploadService {
 
-    @Autowired
-    private Cloudinary cloudinary;
+    private final CloudinaryService cloudinaryService;
 
-    public String uploadImage(MultipartFile file) throws IOException {
-        // Đẩy file lên Cloudinary
-        Map uploadResult = cloudinary.uploader().upload(file.getBytes(), ObjectUtils.emptyMap());
+    /**
+     * Upload ảnh.
+     *
+     * Giữ nguyên method uploadImage để các Controller cũ
+     * không phải thay đổi cách gọi.
+     */
+    public String uploadImage(
+            MultipartFile file
+    ) throws IOException {
 
-        // Lấy đường link URL trả về
-        return uploadResult.get("url").toString();
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Vui lòng chọn ảnh cần tải lên."
+            );
+        }
+
+        String contentType = file.getContentType();
+
+        if (contentType == null
+                || !contentType.toLowerCase(Locale.ROOT)
+                .startsWith("image/")) {
+
+            throw new IllegalArgumentException(
+                    "File tải lên phải là hình ảnh."
+            );
+        }
+
+        return cloudinaryService.uploadFile(
+                file,
+                "travel-platform/images"
+        );
     }
 }
