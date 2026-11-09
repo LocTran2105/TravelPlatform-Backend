@@ -34,6 +34,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.stream.Collectors;
+import java.math.BigDecimal;
 
 /**
  * Discovers real OpenStreetMap POIs using Photon first for named candidates
@@ -865,8 +866,13 @@ public class OsmPlaceDiscoveryService {
         place.setAddress(address);
         place.setDestination(destination);
         place.setPlaceType(category);
-        place.setLatitude(latitude);
-        place.setLongitude(longitude);
+        place.setLatitude(
+                latitude != null ? BigDecimal.valueOf(latitude) : null
+        );
+
+        place.setLongitude(
+                longitude != null ? BigDecimal.valueOf(longitude) : null
+        );
         place.setCategories(categories);
         place.setFetchedAt(LocalDateTime.now());
         if (place.getCurrency() == null) {

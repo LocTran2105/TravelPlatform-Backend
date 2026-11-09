@@ -4,6 +4,7 @@ import hcmute.edu.vn.backend.service.AdminService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import java.security.Principal;
 
 @RestController
 @RequestMapping("/api/admin")
@@ -30,13 +31,27 @@ public class AdminController {
         return ResponseEntity.ok(adminService.getPendingReports(page, size));
     }
 
-    // API: Xử lý báo cáo
     @PutMapping("/reports/{reportId}/resolve")
-    public ResponseEntity<?> resolveReport(@PathVariable Long reportId, @RequestParam String action) {
+    public ResponseEntity<?> resolveReport(
+            @PathVariable Long reportId,
+            @RequestParam String action,
+            Principal principal
+    ) {
         try {
-            return ResponseEntity.ok(adminService.resolveReport(reportId, action));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body("Lỗi: " + e.getMessage());
+
+            return ResponseEntity.ok(
+                    adminService.resolveReport(
+                            reportId,
+                            action,
+                            principal.getName()
+                    )
+            );
+
+        } catch (IllegalArgumentException
+                 | IllegalStateException exception) {
+
+            return ResponseEntity.badRequest()
+                    .body("Lỗi: " + exception.getMessage());
         }
     }
 }
