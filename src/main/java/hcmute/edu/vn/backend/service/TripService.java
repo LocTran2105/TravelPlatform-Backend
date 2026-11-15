@@ -1,6 +1,7 @@
 package hcmute.edu.vn.backend.service;
 
 import hcmute.edu.vn.backend.dto.TripRequest;
+import hcmute.edu.vn.backend.dto.TripSummaryResponse;
 import hcmute.edu.vn.backend.entity.*;
 import hcmute.edu.vn.backend.repository.*;
 import jakarta.transaction.Transactional;
@@ -30,6 +31,12 @@ public class TripService {
     @Autowired
     private TripMemberRepository tripMemberRepository;
 
+    @Autowired
+    private FollowRepository followRepository;
+
+    private static final Set<String> VISIBILITIES =
+            Set.of("PUBLIC", "FOLLOWERS", "FRIENDS", "PRIVATE");
+
     // 1. Logic tạo chuyến đi mới (Tích hợp tự động tạo Ngày + Thêm Bạn đồng hành)
     @Transactional
     public Trip createTrip(TripRequest request, String userEmail) throws Exception {
@@ -55,11 +62,12 @@ public class TripService {
         trip.setEndDate(request.getEndDate());
         trip.setTotalBudget(request.getTotalBudget() != null ? request.getTotalBudget() : BigDecimal.ZERO);
 
-        String visibility = request.getVisibility() != null ? request.getVisibility().toUpperCase() : "PRIVATE";
-        trip.setVisibility(visibility);
-        boolean isPublic = "PUBLIC".equals(visibility) || Boolean.TRUE.equals(request.getIsPublic());
-        trip.setIsPublic(isPublic);
-        trip.setPublicStatus(isPublic ? "APPROVED" : "DRAFT");
+        // visibility là nguồn sự thật duy nhất. Trước đây cờ isPublic từ client có thể
+        // làm chuyến đi PRIVATE vẫn bị coi là công khai.
+        String visibility = (request.getVisibility() == null || request.getVisibility().isBlank())
+                ? "PRIVATE"
+                : parseVisibility(request.getVisibility());
+        applyVisibility(trip, visibility);
 
         // QUAN TRỌNG: Khởi tạo danh sách ngay từ đầu để tránh lỗi Null và OrphanRemoval của Hibernate
         trip.setTripDays(new ArrayList<>());
@@ -143,14 +151,47 @@ public class TripService {
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new Exception("Không tìm thấy chuyến đi!"));
 
-        boolean isOwner = trip.getUser().getEmail().equalsIgnoreCase(userEmail);
-        boolean isCompanion = tripMemberRepository.existsByTripIdAndUserEmail(tripId, userEmail);
-        boolean isPublicOrFriends = Boolean.TRUE.equals(trip.getIsPublic()) || "FRIENDS".equalsIgnoreCase(trip.getVisibility());
-
-        if (!isOwner && !isCompanion && !isPublicOrFriends) {
+        User viewer = userRepository.findByEmail(userEmail).orElse(null);
+        if (!canView(trip, viewer, relationOf(viewer, trip.getUser()))) {
             throw new Exception("Bạn không có quyền xem chuyến đi này!");
         }
         return trip;
+    }
+
+    // 3a. Danh sách chuyến đi của MỘT NGƯỜI (trang cá nhân), chỉ trả những chuyến
+    //     mà người xem được phép thấy. viewerEmail = null nghĩa là khách.
+    public List<TripSummaryResponse> getUserTrips(String targetUsername, String viewerEmail) throws Exception {
+        User target = userRepository.findByUsername(targetUsername)
+                .orElseThrow(() -> new Exception("Không tìm thấy người dùng!"));
+
+        User viewer = (viewerEmail != null)
+                ? userRepository.findByEmail(viewerEmail).orElse(null)
+                : null;
+
+        // Tính quan hệ một lần cho cả danh sách thay vì mỗi chuyến đi
+        ViewerRelation relation = relationOf(viewer, target);
+
+        return tripRepository.findByUser_IdOrderByIdDesc(target.getId()).stream()
+                .filter(trip -> canView(trip, viewer, relation))
+                .map(this::toSummary)
+                .toList();
+    }
+
+    // 3c. Đổi quyền hiển thị (chỉ chủ chuyến đi)
+    @Transactional
+    public String updateVisibility(Long tripId, String visibility, String userEmail) throws Exception {
+        String normalized = parseVisibility(visibility);
+
+        Trip trip = tripRepository.findById(tripId)
+                .orElseThrow(() -> new Exception("Không tìm thấy chuyến đi!"));
+
+        if (!trip.getUser().getEmail().equalsIgnoreCase(userEmail)) {
+            throw new Exception("Chỉ chủ chuyến đi mới có quyền đổi quyền hiển thị!");
+        }
+
+        applyVisibility(trip, normalized);
+        tripRepository.save(trip);
+        return normalized;
     }
 
     // 3b. Cập nhật tổng ngân sách (Chủ chuyến đi hoặc thành viên được phép chỉnh sửa)
@@ -255,5 +296,76 @@ public class TripService {
     public boolean isEmailRegistered(String email) {
         if (email == null || email.trim().isEmpty()) return false;
         return userRepository.findByEmail(email.trim().toLowerCase()).isPresent();
+    }
+
+    // ---------------------------------------------------------------------
+    // QUYỀN HIỂN THỊ (dùng chung ý nghĩa với bài viết)
+    //   PUBLIC    : mọi người
+    //   FOLLOWERS : người đang theo dõi chủ chuyến đi
+    //   FRIENDS   : hai bên theo dõi lẫn nhau
+    //   PRIVATE   : chỉ chủ chuyến đi và các thành viên (bạn đồng hành)
+    // ---------------------------------------------------------------------
+
+    private record ViewerRelation(boolean owner, boolean follows, boolean friend) {}
+
+    private String parseVisibility(String visibility) throws Exception {
+        String value = visibility == null ? "" : visibility.trim().toUpperCase();
+        if (!VISIBILITIES.contains(value)) {
+            throw new Exception("Quyền hiển thị không hợp lệ!");
+        }
+        return value;
+    }
+
+    private void applyVisibility(Trip trip, String visibility) {
+        trip.setVisibility(visibility);
+        boolean isPublic = "PUBLIC".equals(visibility);
+        trip.setIsPublic(isPublic);
+        trip.setPublicStatus(isPublic ? "APPROVED" : "DRAFT");
+    }
+
+    private ViewerRelation relationOf(User viewer, User owner) {
+        if (viewer == null) {
+            return new ViewerRelation(false, false, false);
+        }
+        if (viewer.getId().equals(owner.getId())) {
+            return new ViewerRelation(true, false, false);
+        }
+        boolean follows = followRepository.existsByFollowerAndFollowed(viewer, owner);
+        boolean friend = follows && followRepository.existsByFollowerAndFollowed(owner, viewer);
+        return new ViewerRelation(false, follows, friend);
+    }
+
+    private boolean canView(Trip trip, User viewer, ViewerRelation relation) {
+        if (relation.owner()) return true;
+
+        String visibility = trip.getVisibility() == null ? "PRIVATE" : trip.getVisibility().toUpperCase();
+        switch (visibility) {
+            case "PUBLIC":
+                return true;
+            case "FOLLOWERS":
+                if (relation.follows()) return true;
+                break;
+            case "FRIENDS":
+                if (relation.friend()) return true;
+                break;
+            default:
+                break;
+        }
+
+        // Thành viên của chuyến đi luôn được xem ("Only you & mates")
+        return viewer != null
+                && tripMemberRepository.existsByTripIdAndUserEmail(trip.getId(), viewer.getEmail());
+    }
+
+    private TripSummaryResponse toSummary(Trip trip) {
+        TripSummaryResponse dto = new TripSummaryResponse();
+        dto.setId(trip.getId());
+        dto.setTitle(trip.getTitle());
+        dto.setDestination(trip.getDestination());
+        dto.setStartDate(trip.getStartDate());
+        dto.setEndDate(trip.getEndDate());
+        dto.setVisibility(trip.getVisibility());
+        dto.setMemberCount(trip.getMemberCount());
+        return dto;
     }
 }

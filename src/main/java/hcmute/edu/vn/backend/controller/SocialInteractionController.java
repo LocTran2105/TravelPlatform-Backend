@@ -8,6 +8,9 @@ import org.springframework.web.bind.annotation.*;
 
 import java.security.Principal;
 
+/**
+ * Like và Share. Các API follow đã chuyển sang FollowController.
+ */
 @RestController
 @RequestMapping("/api/social")
 public class SocialInteractionController {
@@ -25,16 +28,6 @@ public class SocialInteractionController {
         }
     }
 
-    // API: Theo dõi / Hủy theo dõi người dùng
-    @PostMapping("/follows/{followedId}")
-    public ResponseEntity<?> toggleFollow(@PathVariable Long followedId, Principal principal) {
-        try {
-            return ResponseEntity.ok(socialService.toggleFollow(followedId, principal.getName()));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body("Lỗi: " + e.getMessage());
-        }
-    }
-
     // API: Ghi nhận lượt chia sẻ
     @PostMapping("/shares")
     public ResponseEntity<?> recordShare(@RequestBody InteractionRequest request, Principal principal) {
@@ -44,6 +37,4 @@ public class SocialInteractionController {
             return ResponseEntity.badRequest().body("Lỗi: " + e.getMessage());
         }
     }
-
-
 }

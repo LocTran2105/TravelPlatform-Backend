@@ -9,8 +9,18 @@ import java.util.List;
 @Setter
 public class PostResponse {
     private Long id;
+
+    // Thông tin Tác giả
     private String authorName;
+    private String authorUsername;
     private String authorAvatar;
+
+    // Trạng thái quan hệ với Người đang xem (Người gọi API)
+    private boolean followedByMe;  // Mình có đang theo dõi Tác giả không?
+    private boolean followingMe;   // Tác giả có đang theo dõi Mình không?
+    private String relationship;   // SELF, NONE, FOLLOWING, FOLLOWED_BY, FRIENDS
+
+    // Nội dung bài
     private String caption;
     private String locationName;
     private Double latitude;
@@ -18,7 +28,8 @@ public class PostResponse {
     private Integer rating;
     private LocalDateTime createdAt;
 
-    // Tách riêng danh sách link Ảnh và Video để React dễ render (dùng <img> hay <video>)
+    private String visibility; // PUBLIC, FRIENDS, FOLLOWERS, PRIVATE
+
     private List<String> imageUrls;
     private List<String> videoUrls;
 }

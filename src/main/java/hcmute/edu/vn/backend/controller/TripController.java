@@ -2,6 +2,7 @@ package hcmute.edu.vn.backend.controller;
 
 import hcmute.edu.vn.backend.dto.BudgetRequest;
 import hcmute.edu.vn.backend.dto.TripRequest;
+import hcmute.edu.vn.backend.dto.TripVisibilityRequest;
 import hcmute.edu.vn.backend.service.TripService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -52,6 +53,28 @@ public class TripController {
     public ResponseEntity<?> updateBudget(@PathVariable Long tripId, @RequestBody BudgetRequest request, Principal principal) {
         try {
             return ResponseEntity.ok(tripService.updateBudget(tripId, request.getTotalBudget(), principal.getName()));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("Lỗi: " + e.getMessage());
+        }
+    }
+
+    // API 3c: Danh sách chuyến đi của một người (trang cá nhân) - có áp dụng quyền hiển thị
+    @GetMapping("/user/{username}")
+    public ResponseEntity<?> getUserTrips(@PathVariable String username, Principal principal) {
+        try {
+            String viewerEmail = (principal != null) ? principal.getName() : null;
+            return ResponseEntity.ok(tripService.getUserTrips(username, viewerEmail));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("Lỗi: " + e.getMessage());
+        }
+    }
+
+    // API 3d: Đổi quyền hiển thị của chuyến đi (PUBLIC / FOLLOWERS / FRIENDS / PRIVATE)
+    @PatchMapping("/{tripId}/visibility")
+    public ResponseEntity<?> updateVisibility(@PathVariable Long tripId, @RequestBody TripVisibilityRequest request, Principal principal) {
+        try {
+            String visibility = tripService.updateVisibility(tripId, request.getVisibility(), principal.getName());
+            return ResponseEntity.ok(Map.of("visibility", visibility));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body("Lỗi: " + e.getMessage());
         }

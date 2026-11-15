@@ -46,6 +46,19 @@ public class SecurityConfig {
                         ).permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/posts").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/trips/*/reviews").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/trips/user/*").permitAll()
+                        .requestMatchers(HttpMethod.GET,
+                                "/api/social/users/*/followers",
+                                "/api/social/users/*/following"
+                        ).permitAll()
+                        .requestMatchers(HttpMethod.GET,
+                                "/api/social/users/*/followers",
+                                "/api/social/users/*/following",
+                                "/api/social/users/*/follow-info"
+                        ).permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/posts/user/*").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/users/profile").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/users/*").permitAll()
                         .requestMatchers("/api/admin/**").hasAuthority("ROLE_ADMIN")
                         .requestMatchers("/api/partner/**").hasAuthority("ROLE_PARTNER")
                         // /api/partner-applications/** không nằm trong matcher ROLE_PARTNER:

@@ -86,13 +86,23 @@ public class Post {
     )
     private LocalDateTime createdAt;
 
+    @Column(name = "visibility", nullable = false, length = 20)
+    private String visibility = "PUBLIC"; // PUBLIC, FRIENDS, FOLLOWERS, PRIVATE
+
+    @Column(name = "status", nullable = false, length = 20)
+    private String status = "PUBLISHED"; // PUBLISHED, DELETED
+
     @PrePersist
     public void prePersist() {
-
-        if (moderationStatus == null
-                || moderationStatus.isBlank()) {
-
-            moderationStatus = "PENDING";
+        // SỬA: Cho bài đăng được duyệt (APPROVED) ngay lập tức khi tạo
+        if (moderationStatus == null || moderationStatus.isBlank() || moderationStatus.equals("PENDING")) {
+            moderationStatus = "APPROVED";
+        }
+        if (visibility == null || visibility.isBlank()) {
+            visibility = "PUBLIC";
+        }
+        if (status == null || status.isBlank()) {
+            status = "PUBLISHED";
         }
     }
 }
