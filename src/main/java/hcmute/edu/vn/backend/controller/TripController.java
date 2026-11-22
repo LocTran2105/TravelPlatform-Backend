@@ -3,6 +3,7 @@ package hcmute.edu.vn.backend.controller;
 import hcmute.edu.vn.backend.dto.BudgetRequest;
 import hcmute.edu.vn.backend.dto.TripRequest;
 import hcmute.edu.vn.backend.dto.TripVisibilityRequest;
+import hcmute.edu.vn.backend.service.TripAccessException;
 import hcmute.edu.vn.backend.service.TripService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -53,6 +54,8 @@ public class TripController {
     public ResponseEntity<?> updateBudget(@PathVariable Long tripId, @RequestBody BudgetRequest request, Principal principal) {
         try {
             return ResponseEntity.ok(tripService.updateBudget(tripId, request.getTotalBudget(), principal.getName()));
+        } catch (TripAccessException e) {
+            return ResponseEntity.status(e.getStatus()).body(e.getMessage());
         } catch (Exception e) {
             return ResponseEntity.badRequest().body("Lỗi: " + e.getMessage());
         }
@@ -99,10 +102,5 @@ public class TripController {
         } catch (Exception e) {
             return ResponseEntity.badRequest().body("Lỗi: " + e.getMessage());
         }
-    }
-    // API 6: Kiểm tra email bạn đồng hành đã đăng ký chưa
-    @GetMapping("/check-email")
-    public ResponseEntity<?> checkEmail(@RequestParam String email) {
-        return ResponseEntity.ok(Map.of("exists", tripService.isEmailRegistered(email)));
     }
 }

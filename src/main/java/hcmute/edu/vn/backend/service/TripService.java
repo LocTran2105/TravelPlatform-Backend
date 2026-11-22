@@ -34,6 +34,12 @@ public class TripService {
     @Autowired
     private FollowRepository followRepository;
 
+    @Autowired
+    private TripInvitationService invitationService;
+
+    @Autowired
+    private TripAccessService accessService;
+
     private static final Set<String> VISIBILITIES =
             Set.of("PUBLIC", "FOLLOWERS", "FRIENDS", "PRIVATE");
 
@@ -48,6 +54,10 @@ public class TripService {
                 throw new Exception("Ngày kết thúc không được nhỏ hơn ngày bắt đầu!");
             }
         }
+
+        // Kiểm tra email bạn đồng hành TRƯỚC khi tạo gì cả: email sai định dạng / quá nhiều
+        // người thì báo lỗi ngay. Email chưa có tài khoản vẫn hợp lệ (họ sẽ nhận thư mời).
+        List<String> inviteEmails = invitationService.prepareEmails(request.getCompanionEmails(), owner);
 
         Trip trip = new Trip();
         trip.setUser(owner);
@@ -73,7 +83,7 @@ public class TripService {
         trip.setTripDays(new ArrayList<>());
         trip.setMembers(new ArrayList<>());
 
-        // --- BƯỚC A: THÊM THÀNH VIÊN ĐỒNG HÀNH ---
+        // --- BƯỚC A: CHỦ CHUYẾN ĐI LÀ THÀNH VIÊN ĐẦU TIÊN ---
         TripMember ownerMember = new TripMember();
         ownerMember.setTrip(trip);
         ownerMember.setUser(owner);
@@ -81,37 +91,9 @@ public class TripService {
         ownerMember.setStatus("ACCEPTED");
         trip.getMembers().add(ownerMember); // Đưa vào mảng thay vì gọi Repository.save()
 
-        if (request.getCompanionEmails() != null && !request.getCompanionEmails().isEmpty()) {
-            List<String> notFoundEmails = new ArrayList<>();
-            Set<String> seenEmails = new HashSet<>();
-
-            for (String companionEmail : request.getCompanionEmails()) {
-                if (companionEmail == null) continue;
-                String cleanEmail = companionEmail.trim().toLowerCase();
-
-                // Bỏ qua email rỗng, email của chủ chuyến đi và email bị trùng
-                if (cleanEmail.isEmpty()
-                        || cleanEmail.equalsIgnoreCase(owner.getEmail())
-                        || !seenEmails.add(cleanEmail)) continue;
-
-                Optional<User> companionOpt = userRepository.findByEmail(cleanEmail);
-                if (companionOpt.isPresent()) {
-                    TripMember member = new TripMember();
-                    member.setTrip(trip);
-                    member.setUser(companionOpt.get());
-                    member.setRole("EDITOR");
-                    member.setStatus("ACCEPTED");
-                    trip.getMembers().add(member);
-                } else {
-                    notFoundEmails.add(cleanEmail);
-                }
-            }
-
-            if (!notFoundEmails.isEmpty()) {
-                throw new Exception("Không tìm thấy tài khoản với email: " + String.join(", ", notFoundEmails));
-            }
-        }
-        trip.setMemberCount(trip.getMembers().size());
+        // Bạn đồng hành KHÔNG bị thêm thẳng vào chuyến đi: họ nhận email mời và chỉ trở thành
+        // thành viên khi bấm "Tham gia". Vì vậy lúc tạo, chuyến đi mới có 1 thành viên (chủ).
+        trip.setMemberCount(1);
 
         // --- BƯỚC B: TỰ ĐỘNG SINH CÁC NGÀY (TRIP_DAYS) ---
         if (request.getStartDate() != null && request.getEndDate() != null) {
@@ -135,7 +117,12 @@ public class TripService {
 
         // BƯỚC C: LƯU TOÀN BỘ BẰNG 1 LỆNH DUY NHẤT
         // Nhờ CascadeType.ALL, Hibernate sẽ tự động lặp qua mảng Members và TripDays để INSERT xuống Database
-        return tripRepository.save(trip);
+        Trip savedTrip = tripRepository.save(trip);
+
+        // BƯỚC D: TẠO LỜI MỜI + GỬI EMAIL (email chỉ gửi sau khi giao dịch commit thành công)
+        invitationService.invite(savedTrip, owner, inviteEmails, "EDITOR");
+
+        return savedTrip;
     }
 
     // 2. Logic lấy danh sách chuyến đi của "Tôi"
@@ -209,11 +196,8 @@ public class TripService {
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new Exception("Không tìm thấy chuyến đi!"));
 
-        boolean isOwner = trip.getUser().getEmail().equalsIgnoreCase(userEmail);
-        boolean isCompanion = tripMemberRepository.existsByTripIdAndUserEmail(tripId, userEmail);
-        if (!isOwner && !isCompanion) {
-            throw new Exception("Bạn không có quyền chỉnh sửa ngân sách chuyến đi này!");
-        }
+        // Chủ chuyến đi hoặc tripmate được chỉnh sửa (người chỉ xem bị từ chối)
+        accessService.requireEdit(trip, userEmail);
 
         trip.setTotalBudget(totalBudget);
         tripRepository.save(trip);
@@ -292,12 +276,6 @@ public class TripService {
 
         tripRepository.delete(trip);
     }
-    // 6. Kiểm tra email đã đăng ký tài khoản chưa (dùng cho ô Tripmates)
-    public boolean isEmailRegistered(String email) {
-        if (email == null || email.trim().isEmpty()) return false;
-        return userRepository.findByEmail(email.trim().toLowerCase()).isPresent();
-    }
-
     // ---------------------------------------------------------------------
     // QUYỀN HIỂN THỊ (dùng chung ý nghĩa với bài viết)
     //   PUBLIC    : mọi người

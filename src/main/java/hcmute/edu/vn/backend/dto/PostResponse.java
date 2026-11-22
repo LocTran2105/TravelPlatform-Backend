@@ -1,7 +1,9 @@
 package hcmute.edu.vn.backend.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Getter;
 import lombok.Setter;
+
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -30,6 +32,22 @@ public class PostResponse {
 
     private String visibility; // PUBLIC, FRIENDS, FOLLOWERS, PRIVATE
 
+    // Giữ lại để các màn hình cũ (trang cá nhân...) vẫn chạy.
     private List<String> imageUrls;
     private List<String> videoUrls;
+
+    // MỚI: toàn bộ ảnh/video theo ĐÚNG thứ tự người dùng đã chọn khi đăng.
+    private List<MediaItem> media;
+
+    // Tim + bình luận.
+    // Field tên likedByMe, JSON vẫn là "isLikedByMe" như frontend đang dùng
+    // (đặt @JsonProperty trên field cùng tên với getter nên chỉ ra MỘT key,
+    // không bị trùng "likedByMe" + "isLikedByMe" như trước).
+    @JsonProperty("isLikedByMe")
+    private boolean likedByMe;
+    private long likeCount;
+    private long commentCount;
+
+    /** type: "IMAGE" hoặc "VIDEO". */
+    public record MediaItem(String url, String type) {}
 }

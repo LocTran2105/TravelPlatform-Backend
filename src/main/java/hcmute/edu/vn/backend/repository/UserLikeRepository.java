@@ -13,4 +13,7 @@ public interface UserLikeRepository extends JpaRepository<UserLike, Long> {
 
     // Đếm tổng số lượt like của một bài viết/địa điểm
     long countByTargetTypeAndTargetId(String targetType, Long targetId);
+
+    // Kiểm tra xem User đã thích thực thể này chưa
+    boolean existsByUserIdAndTargetTypeAndTargetId(Long userId, String targetType, Long targetId);
 }

@@ -2,6 +2,7 @@ package hcmute.edu.vn.backend.controller;
 
 import hcmute.edu.vn.backend.dto.ExpenseRequest;
 import hcmute.edu.vn.backend.service.ExpenseService;
+import hcmute.edu.vn.backend.service.TripAccessException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -33,6 +34,8 @@ public class ExpenseController {
             Principal principal) {
         try {
             return ResponseEntity.ok(expenseService.addExpense(tripId, request, principal.getName()));
+        } catch (TripAccessException e) {
+            return ResponseEntity.status(e.getStatus()).body(e.getMessage());
         } catch (Exception e) {
             return ResponseEntity.badRequest().body("Lỗi: " + e.getMessage());
         }
@@ -47,6 +50,8 @@ public class ExpenseController {
         try {
             expenseService.deleteExpense(tripId, expenseId, principal.getName());
             return ResponseEntity.ok("Đã xóa khoản chi!");
+        } catch (TripAccessException e) {
+            return ResponseEntity.status(e.getStatus()).body(e.getMessage());
         } catch (Exception e) {
             return ResponseEntity.badRequest().body("Lỗi: " + e.getMessage());
         }

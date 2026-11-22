@@ -45,7 +45,15 @@ public class SecurityConfig {
                                 "/error"
                         ).permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/posts").permitAll()
+                        // Khách xem được bình luận của bài PUBLIC (quyền xem vẫn
+                        // được CommentService kiểm tra theo từng bài).
+                        .requestMatchers(HttpMethod.GET, "/api/posts/*/comments").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/trips/*/reviews").permitAll()
+                        // Người cầm link mời được xem trước lời mời khi chưa đăng nhập
+                        // (token là chuỗi ngẫu nhiên 256 bit nên không đoán được).
+                        .requestMatchers(HttpMethod.GET, "/api/invitations/preview/*").permitAll()
+                        // Tương tự cho link chia sẻ chuyến đi (token ngẫu nhiên 256 bit)
+                        .requestMatchers(HttpMethod.GET, "/api/share/preview/*").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/trips/user/*").permitAll()
                         .requestMatchers(HttpMethod.GET,
                                 "/api/social/users/*/followers",

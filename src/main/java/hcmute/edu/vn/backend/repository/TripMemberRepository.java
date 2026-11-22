@@ -9,7 +9,27 @@ import java.util.Optional;
 
 @Repository
 public interface TripMemberRepository extends JpaRepository<TripMember, Long> {
-    List<TripMember> findByTripId(Long tripId);
+
+    List<TripMember> findByTripIdAndStatus(Long tripId, String status);
+
     Optional<TripMember> findByTripIdAndUserId(Long tripId, Long userId);
-    boolean existsByTripIdAndUserEmail(Long tripId, String email);
+
+    boolean existsByTripIdAndUserEmailIgnoreCaseAndStatus(Long tripId, String email, String status);
+
+    Optional<TripMember> findByTripIdAndUserEmailIgnoreCaseAndStatus(Long tripId, String email, String status);
+
+    // Số thành viên "tham gia thật": không tính người chỉ xem
+    long countByTripIdAndStatusAndRoleNot(Long tripId, String status, String role);
+
+    long countByTripIdAndStatus(Long tripId, String status);
+
+    // Hai hàm cũ giữ nguyên tên để ExpenseService, TripService... không phải sửa,
+    // nhưng nay chỉ tính thành viên đã chấp nhận (ACCEPTED).
+    default List<TripMember> findByTripId(Long tripId) {
+        return findByTripIdAndStatus(tripId, "ACCEPTED");
+    }
+
+    default boolean existsByTripIdAndUserEmail(Long tripId, String email) {
+        return existsByTripIdAndUserEmailIgnoreCaseAndStatus(tripId, email, "ACCEPTED");
+    }
 }

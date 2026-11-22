@@ -33,6 +33,8 @@ public class ExpenseService {
     private TripMemberRepository tripMemberRepository;
     @Autowired
     private TripDestinationRepository tripDestinationRepository;
+    @Autowired
+    private TripAccessService accessService;
 
     // ==========================================
     // HÀM HỖ TRỢ
@@ -50,11 +52,13 @@ public class ExpenseService {
         return trip;
     }
 
-    // Thành viên chuyến đi, luôn gồm cả chủ chuyến đi (chuyến đi nhân bản chưa có bản ghi trip_members cho chủ)
+    // Thành viên chuyến đi, luôn gồm cả chủ chuyến đi (chuyến đi nhân bản chưa có bản ghi trip_members cho chủ).
+    // Người chỉ xem (VIEWER) không tham gia chia tiền nên không nằm trong danh sách này.
     private Map<Long, User> getMembers(Trip trip) {
         Map<Long, User> members = new LinkedHashMap<>();
         members.put(trip.getUser().getId(), trip.getUser());
         for (TripMember m : tripMemberRepository.findByTripId(trip.getId())) {
+            if ("VIEWER".equals(m.getRole())) continue;
             members.putIfAbsent(m.getUser().getId(), m.getUser());
         }
         return members;
@@ -84,7 +88,7 @@ public class ExpenseService {
     // ==========================================
     @Transactional(rollbackFor = Exception.class)
     public ExpenseResponse addExpense(Long tripId, ExpenseRequest request, String email) throws Exception {
-        Trip trip = loadTripForMember(tripId, email);
+        Trip trip = accessService.requireEdit(tripId, email); // người chỉ xem không được thêm chi phí
         User currentUser = userRepository.findByEmail(email)
                 .orElseThrow(() -> new Exception("Không tìm thấy người dùng!"));
         Map<Long, User> members = getMembers(trip);
@@ -191,7 +195,7 @@ public class ExpenseService {
     // ==========================================
     @Transactional(rollbackFor = Exception.class)
     public void deleteExpense(Long tripId, Long expenseId, String email) throws Exception {
-        Trip trip = loadTripForMember(tripId, email);
+        Trip trip = accessService.requireEdit(tripId, email); // người chỉ xem không được xóa chi phí
         Expense expense = expenseRepository.findById(expenseId)
                 .orElseThrow(() -> new Exception("Không tìm thấy khoản chi!"));
         if (!expense.getTrip().getId().equals(tripId)) {
