@@ -110,7 +110,7 @@ public class RecommendationService {
             uniquePlaces.putIfAbsent(buildDeduplicationKey(place), place);
         }
 
-        List<PlaceDiscoveryDTO> ranked = uniquePlaces.values().stream()
+        List<PlaceDiscoveryDTO> sorted = uniquePlaces.values().stream()
                 .map(place -> scorePlace(
                         place,
                         trip,
@@ -125,12 +125,13 @@ public class RecommendationService {
                         .thenComparing(
                                 PlaceDiscoveryDTO::getName,
                                 Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER)))
-                .limit(limit)
                 .collect(Collectors.toList());
+        List<PlaceDiscoveryDTO> ranked = keepVerifiedPartners(sorted, limit);
 
         log.info(
-                "OSM recommendation hoàn tất: tripId={}, destination='{}', category={}, discovered={}, returned={}",
-                tripId, destination, normalizedCategory, discovered.size(), ranked.size());
+                "Recommendation hoàn tất: tripId={}, destination='{}', category={}, discovered={}, returned={}, partnerReturned={}",
+                tripId, destination, normalizedCategory, discovered.size(), ranked.size(),
+                ranked.stream().filter(RecommendationService::isPartner).count());
 
         return ranked;
     }
@@ -197,6 +198,38 @@ public class RecommendationService {
                 .filter(Objects::nonNull)
                 .limit(limit)
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * Giữ thứ tự theo điểm, nhưng không để địa điểm Partner đã được Admin xác minh bị cắt hết bởi limit:
+     * dành tối đa nửa số slot cho chúng (thay cho các kết quả OSM điểm thấp nhất). Không đổi điểm số.
+     */
+    private static List<PlaceDiscoveryDTO> keepVerifiedPartners(List<PlaceDiscoveryDTO> sorted, int limit) {
+        if (sorted.size() <= limit) {
+            return sorted;
+        }
+        List<PlaceDiscoveryDTO> top = new ArrayList<>(sorted.subList(0, limit));
+        int reserved = Math.max(1, limit / 2);
+        long partnersInTop = top.stream().filter(RecommendationService::isPartner).count();
+        List<PlaceDiscoveryDTO> missingPartners = sorted.subList(limit, sorted.size()).stream()
+                .filter(RecommendationService::isPartner)
+                .limit(Math.max(0, reserved - partnersInTop))
+                .collect(Collectors.toList());
+
+        for (PlaceDiscoveryDTO partner : missingPartners) {
+            for (int i = top.size() - 1; i >= 0; i--) {
+                if (!isPartner(top.get(i))) {
+                    top.remove(i);
+                    break;
+                }
+            }
+            top.add(partner);
+        }
+        return top;
+    }
+
+    private static boolean isPartner(PlaceDiscoveryDTO dto) {
+        return dto != null && "PARTNER".equalsIgnoreCase(dto.getProvider());
     }
 
     private List<String> loadPreferenceTags(Long tripId) {
@@ -317,6 +350,11 @@ public class RecommendationService {
                 ? Math.round((weightedScore / activeWeight) * 100.0) / 100.0
                 : null;
 
+        boolean partnerPlace = "PARTNER".equalsIgnoreCase(place.getProvider());
+        if (partnerPlace) {
+            reasons.add(0, "Đối tác đã được Admin xác minh thông tin và vị trí");
+        }
+
         if (reasons.isEmpty()) {
             reasons.add("Địa điểm được tìm thấy tại "
                     + safeText(place.getDestination(), "điểm đến"));
@@ -334,12 +372,8 @@ public class RecommendationService {
                 .destination(place.getDestination())
                 .category(category)
                 .categories(placeCategories)
-                .latitude(validCoordinates
-                        ? place.getLatitude().doubleValue()
-                        : null)
-                .longitude(validCoordinates
-                        ? place.getLongitude().doubleValue()
-                        : null)
+                .latitude(validCoordinates ? place.getLatitude().doubleValue() : null)
+                .longitude(validCoordinates ? place.getLongitude().doubleValue() : null)
                 .rating(rating)
                 .userRatingsTotal(place.getUserRatingsTotal())
                 .estimatedPrice(estimatedCost)
@@ -348,19 +382,11 @@ public class RecommendationService {
                 .matchScore(matchScore)
                 .matchReason(String.join(" • ", reasons))
                 .sourceUrl(null)
-                .attribution("© OpenStreetMap contributors")
+                // Ghi đúng nguồn: Place PARTNER là dữ liệu nội bộ, không phải dữ liệu OpenStreetMap.
+                .attribution(partnerPlace
+                        ? "Dữ liệu đối tác · Travel Platform đã xác minh"
+                        : "© OpenStreetMap contributors")
                 .build();
-    }
-    private static boolean isValidCoordinates(
-            BigDecimal latitude,
-            BigDecimal longitude) {
-
-        return latitude != null
-                && longitude != null
-                && latitude.compareTo(BigDecimal.valueOf(-90)) >= 0
-                && latitude.compareTo(BigDecimal.valueOf(90)) <= 0
-                && longitude.compareTo(BigDecimal.valueOf(-180)) >= 0
-                && longitude.compareTo(BigDecimal.valueOf(180)) <= 0;
     }
 
     private BigDecimal calculateDailyPerPersonBudget(Trip trip) {
@@ -456,6 +482,13 @@ public class RecommendationService {
                 && latitude <= 90.0
                 && longitude >= -180.0
                 && longitude <= 180.0;
+    }
+
+    /** Validates coordinates stored as DECIMAL columns in the places table. */
+    private static boolean isValidCoordinates(BigDecimal latitude, BigDecimal longitude) {
+        return latitude != null
+                && longitude != null
+                && isValidCoordinates(latitude.doubleValue(), longitude.doubleValue());
     }
 
     private static double haversineMeters(

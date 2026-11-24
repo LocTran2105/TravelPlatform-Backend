@@ -1,14 +1,19 @@
 package hcmute.edu.vn.backend.service;
 
 import hcmute.edu.vn.backend.dto.AdminBusinessLocationRequest;
+import hcmute.edu.vn.backend.dto.AdminBusinessApprovalRequest;
+import hcmute.edu.vn.backend.dto.AdminOsmPlaceCandidateResponse;
 import hcmute.edu.vn.backend.dto.AdminBusinessOperatingStatusRequest;
 import hcmute.edu.vn.backend.dto.AdminBusinessVisibilityRequest;
 import hcmute.edu.vn.backend.dto.PartnerBusinessAdminResponse;
 import hcmute.edu.vn.backend.dto.PartnerSubmissionAdminResponse;
 import hcmute.edu.vn.backend.entity.PartnerBusiness;
+import hcmute.edu.vn.backend.entity.PartnerBusinessMedia;
+import hcmute.edu.vn.backend.entity.Place;
 import hcmute.edu.vn.backend.entity.PartnerSubmission;
 import hcmute.edu.vn.backend.entity.User;
 import hcmute.edu.vn.backend.repository.PartnerBusinessRepository;
+import hcmute.edu.vn.backend.repository.PartnerBusinessMediaRepository;
 import hcmute.edu.vn.backend.repository.PartnerSubmissionRepository;
 import hcmute.edu.vn.backend.repository.UserRepository;
 
@@ -51,6 +56,12 @@ public class AdminPartnerBusinessService {
 
     private final PartnerAuditService auditService;
 
+    private final PartnerPlaceLinkService partnerPlaceLinkService;
+
+    private final OsmPlaceDiscoveryService osmPlaceDiscoveryService;
+
+    private final PartnerBusinessMediaRepository mediaRepository;
+
     /**
      * Admin xem danh sách yêu cầu duyệt Business.
      */
@@ -58,6 +69,14 @@ public class AdminPartnerBusinessService {
     public List<PartnerSubmissionAdminResponse> getSubmissions(
             String status
     ) {
+        // Khi Admin chọn "Tất cả", không gắn bộ lọc trạng thái.
+        if (status == null || status.isBlank()) {
+            return submissionRepository
+                    .findAll(Sort.by(Sort.Direction.ASC, "submittedAt"))
+                    .stream()
+                    .map(PartnerSubmissionAdminResponse::from)
+                    .toList();
+        }
 
         String normalizedStatus = normalizeSubmissionStatus(status);
 
@@ -88,70 +107,132 @@ public class AdminPartnerBusinessService {
     }
 
     /**
-     * Admin duyệt thông tin Business.
+     * Tìm các OSM POI gần vị trí Partner để Admin kiểm tra trên bản đồ.
+     * Discovery chỉ lưu OSM records; nó không được phép tự gắn Business.
+     */
+    public List<AdminOsmPlaceCandidateResponse> getOsmCandidates(
+            Long submissionId,
+            int radiusMeters,
+            String adminEmail) {
+
+        requireAdmin(adminEmail);
+        PartnerSubmission submission = submissionRepository.findByIdWithBusiness(submissionId)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy yêu cầu duyệt."));
+        ensurePending(submission);
+        PartnerBusiness business = submission.getBusiness();
+        if (business == null || business.getDeletedAt() != null) {
+            throw new IllegalStateException("Business không tồn tại hoặc đã bị xóa.");
+        }
+        if (business.getLatitude() == null || business.getLongitude() == null) {
+            throw new IllegalStateException("Business chưa khai báo latitude/longitude. Partner cần bổ sung tọa độ trước khi Admin kiểm tra bản đồ.");
+        }
+
+        String businessType = business.getBusinessType() == null
+                ? "" : business.getBusinessType().trim().toUpperCase(Locale.ROOT);
+        Set<String> osmSearchableTypes = Set.of(
+                "HOTEL", "HOMESTAY", "RESORT", "HOSTEL", "APARTMENT",
+                "RESTAURANT", "EATERY", "CAFE", "COFFEE_SHOP",
+                "ATTRACTION", "TOURIST_SITE"
+        );
+        // Avoid showing unrelated attractions as candidates for shops, spas, or OTHER businesses.
+        if (!osmSearchableTypes.contains(businessType)) {
+            return List.of();
+        }
+
+        List<Place> candidates = osmPlaceDiscoveryService.discoverNearbyPlacesForAdmin(
+                business.getCity(), business.getLatitude(), business.getLongitude(),
+                businessType, radiusMeters, 50);
+
+        return candidates.stream()
+                .filter(place -> place.getPartnerBusinessId() == null
+                        || place.getPartnerBusinessId().equals(business.getId()))
+                .map(place -> new AdminOsmPlaceCandidateResponse(
+                        place.getId(), place.getProviderPlaceId(), place.getName(),
+                        place.getAddress(), place.getPlaceType(), place.getLatitude(),
+                        place.getLongitude(), distanceMeters(
+                        business.getLatitude(), business.getLongitude(),
+                        place.getLatitude(), place.getLongitude())))
+                .sorted((a, b) -> Double.compare(
+                        a.distanceMeters() == null ? Double.MAX_VALUE : a.distanceMeters(),
+                        b.distanceMeters() == null ? Double.MAX_VALUE : b.distanceMeters()))
+                .toList();
+    }
+
+    /**
+     * Admin duyệt Business và BẮT BUỘC xác nhận nguồn Place trước khi công khai.
+     * Việc gắn Place và cập nhật trạng thái nằm trong cùng một transaction.
      */
     @Transactional
     public PartnerSubmissionAdminResponse approveSubmission(
             Long submissionId,
-            String reviewNote,
-            String adminEmail
-    ) {
+            AdminBusinessApprovalRequest request,
+            String adminEmail) {
 
         User admin = requireAdmin(adminEmail);
+        if (request == null) {
+            throw new IllegalArgumentException("Thiếu lựa chọn địa điểm OSM/PARTNER của Admin.");
+        }
 
-        PartnerSubmission submission =
-                submissionRepository.findByIdForReview(submissionId)
-                        .orElseThrow(() ->
-                                new IllegalArgumentException(
-                                        "Không tìm thấy yêu cầu duyệt."
-                                )
-                        );
-
+        PartnerSubmission submission = submissionRepository.findByIdForReview(submissionId)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy yêu cầu duyệt."));
         ensurePending(submission);
 
         PartnerBusiness business = submission.getBusiness();
-
-        if (business.getDeletedAt() != null) {
-            throw new IllegalStateException(
-                    "Cơ sở kinh doanh đã bị xóa."
-            );
+        if (business == null || business.getDeletedAt() != null) {
+            throw new IllegalStateException("Cơ sở kinh doanh đã bị xóa hoặc không còn tồn tại.");
+        }
+        if (!"BUSINESS_PROFILE".equalsIgnoreCase(submission.getSubmissionType())) {
+            throw new IllegalArgumentException("Loại yêu cầu này chưa được hỗ trợ duyệt.");
         }
 
-        if (!"BUSINESS_PROFILE".equalsIgnoreCase(
-                submission.getSubmissionType()
-        )) {
-            throw new IllegalArgumentException(
-                    "Loại yêu cầu này chưa được hỗ trợ duyệt."
-            );
+        String selectedProvider = request.placeProvider() == null
+                ? "" : request.placeProvider().trim().toUpperCase(Locale.ROOT);
+        Place confirmedPlace;
+        if ("OSM".equals(selectedProvider)) {
+            if (request.placeId() == null) {
+                throw new IllegalArgumentException("Admin phải chọn một OSM POI trên bản đồ.");
+            }
+            confirmedPlace = partnerPlaceLinkService.confirmOsmPlace(business.getId(), request.placeId());
+        } else if ("PARTNER".equals(selectedProvider)) {
+            confirmedPlace = partnerPlaceLinkService.createPartnerPlace(
+                    business.getId(), request.latitude(), request.longitude());
+        } else {
+            throw new IllegalArgumentException("placeProvider phải là OSM hoặc PARTNER.");
         }
 
         LocalDateTime now = LocalDateTime.now();
+        String oldVerificationStatus = business.getVerificationStatus();
+        String oldPublicationStatus = business.getPublicationStatus();
 
-        String oldVerificationStatus =
-                business.getVerificationStatus();
-
-        String oldPublicationStatus =
-                business.getPublicationStatus();
-
-        // Cập nhật Business.
         business.setVerificationStatus("APPROVED");
         business.setPublicationStatus("PUBLISHED");
         business.setVerifiedBy(admin);
         business.setVerifiedAt(now);
         business.setRejectionReason(null);
-
         businessRepository.save(business);
 
-        // Cập nhật Submission.
+        // Ảnh nằm trong snapshot mà Admin vừa xem; việc duyệt Business đồng thời duyệt các media đó.
+        List<PartnerBusinessMedia> mediaItems = mediaRepository
+                .findByBusiness_IdOrderBySortOrderAscIdAsc(business.getId());
+        for (PartnerBusinessMedia media : mediaItems) {
+            if (media == null || media.getMediaType() == null
+                    || !"IMAGE".equalsIgnoreCase(media.getMediaType())
+                    || media.getModerationStatus() == null
+                    || !"PENDING".equalsIgnoreCase(media.getModerationStatus())) {
+                continue;
+            }
+            media.setModerationStatus("APPROVED");
+            media.setReviewedById(admin.getId());
+            media.setReviewedAt(now);
+        }
+        mediaRepository.saveAll(mediaItems);
+
         submission.setStatus("APPROVED");
         submission.setReviewedBy(admin);
         submission.setReviewedAt(now);
-        submission.setReviewNote(trimToNull(reviewNote));
+        submission.setReviewNote(trimToNull(request.note()));
+        PartnerSubmission saved = submissionRepository.save(submission);
 
-        PartnerSubmission saved =
-                submissionRepository.save(submission);
-
-        // Audit.
         auditService.log(
                 adminEmail,
                 business.getId(),
@@ -159,10 +240,22 @@ public class AdminPartnerBusinessService {
                 "PARTNER_BUSINESS",
                 business.getId(),
                 oldVerificationStatus + "/" + oldPublicationStatus,
-                "APPROVED/PUBLISHED"
+                "APPROVED/PUBLISHED; PLACE=" + confirmedPlace.getProvider() + ":" + confirmedPlace.getId()
         );
 
         return PartnerSubmissionAdminResponse.from(saved);
+    }
+
+    private static Double distanceMeters(BigDecimal lat1, BigDecimal lon1,
+                                         BigDecimal lat2, BigDecimal lon2) {
+        if (lat1 == null || lon1 == null || lat2 == null || lon2 == null) return null;
+        double p1 = Math.toRadians(lat1.doubleValue());
+        double p2 = Math.toRadians(lat2.doubleValue());
+        double dLat = p2 - p1;
+        double dLon = Math.toRadians(lon2.doubleValue() - lon1.doubleValue());
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+                + Math.cos(p1) * Math.cos(p2) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        return 6_371_000.0 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
 
     /**

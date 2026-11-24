@@ -22,8 +22,8 @@ import java.time.LocalTime;
 @Table(
         name = "partner_business_hours",
         uniqueConstraints = @UniqueConstraint(
-                name = "uq_partner_business_day",
-                columnNames = {"business_id", "day_of_week"}
+                name = "uq_business_hours_slot",
+                columnNames = {"business_id", "weekday", "slot_number"}
         )
 )
 @Getter
@@ -40,8 +40,11 @@ public class PartnerBusinessHours {
     @JoinColumn(name = "business_id", nullable = false)
     private PartnerBusiness business;
 
-    @Column(name = "day_of_week", nullable = false)
+    @Column(name = "weekday", nullable = false)
     private Integer dayOfWeek;
+
+    @Column(name = "slot_number", nullable = false)
+    private Integer slotNumber = 1;
 
     @Column(name = "open_time")
     private LocalTime openTime;
@@ -51,6 +54,12 @@ public class PartnerBusinessHours {
 
     @Column(name = "is_closed", nullable = false)
     private Boolean closed = false;
+
+    @Column(name = "closes_next_day", nullable = false)
+    private Boolean closesNextDay = false;
+
+    @Column(name = "note", length = 255)
+    private String note;
 
     @Column(name = "created_at", insertable = false, updatable = false)
     private LocalDateTime createdAt;

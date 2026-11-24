@@ -16,6 +16,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalTime;
 import java.time.format.DateTimeParseException;
+import org.springframework.transaction.annotation.Transactional;
+import java.util.Locale;
 
 @Service
 public class TripDestinationService {
@@ -31,50 +33,168 @@ public class TripDestinationService {
     @Autowired
     private PlaceRepository placeRepository; // Inject thêm PlaceRepository
 
-    public TripDestination addDestinationToDay(Long dayId, DestinationRequest request, String userEmail) throws Exception {
-        TripDay tripDay = tripDayRepository.findById(dayId)
-                .orElseThrow(() -> new Exception("Không tìm thấy ngày của chuyến đi!"));
 
-        Long tripId = tripDay.getTrip().getId();
-        boolean isOwner = tripDay.getTrip().getUser().getEmail().equalsIgnoreCase(userEmail);
-        boolean isCompanion = tripMemberRepository.existsByTripIdAndUserEmail(tripId, userEmail);
+    @Transactional
+    public TripDestination addDestinationToDay(
+            Long dayId,
+            DestinationRequest request,
+            String userEmail
+    ) throws Exception {
+
+        if (request == null) {
+            throw new Exception("Dữ liệu địa điểm không hợp lệ!");
+        }
+
+        TripDay tripDay = tripDayRepository.findById(dayId)
+                .orElseThrow(() ->
+                        new Exception("Không tìm thấy ngày của chuyến đi!")
+                );
+
+        Trip trip = tripDay.getTrip();
+        Long tripId = trip.getId();
+
+        boolean isOwner = trip.getUser() != null
+                && trip.getUser().getEmail().equalsIgnoreCase(userEmail);
+
+        boolean isCompanion =
+                tripMemberRepository.existsByTripIdAndUserEmail(
+                        tripId, userEmail
+                );
 
         if (!isOwner && !isCompanion) {
-            throw new Exception("Bạn không có quyền chỉnh sửa hành trình này!");
+            throw new Exception(
+                    "Bạn không có quyền chỉnh sửa hành trình này!"
+            );
+        }
+
+        Place place = null;
+
+        if (request.getPlaceId() != null) {
+            place = placeRepository.findById(request.getPlaceId())
+                    .orElseThrow(() ->
+                            new Exception("Không tìm thấy địa điểm đề xuất!")
+                    );
+
+            if (place.getName() == null || place.getName().isBlank()) {
+                throw new Exception("Địa điểm không có tên hợp lệ!");
+            }
+        } else if (request.getPlaceName() == null
+                || request.getPlaceName().isBlank()) {
+            throw new Exception("Tên địa điểm không được để trống!");
+        }
+
+        if ((request.getLatitude() == null)
+                != (request.getLongitude() == null)) {
+            throw new Exception(
+                    "Latitude và longitude phải được nhập cùng nhau!"
+            );
+        }
+
+        if (request.getLatitude() != null) {
+            double lat = request.getLatitude();
+            double lon = request.getLongitude();
+
+            if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+                throw new Exception("Tọa độ địa điểm không hợp lệ!");
+            }
+        }
+
+        if (request.getOrderIndex() != null && request.getOrderIndex() < 0) {
+            throw new Exception("Thứ tự địa điểm không hợp lệ!");
+        }
+
+        if (request.getStartTime() != null
+                && request.getEndTime() != null
+                && !request.getEndTime().isAfter(request.getStartTime())) {
+            throw new Exception("Giờ kết thúc phải sau giờ bắt đầu!");
         }
 
         TripDestination dest = new TripDestination();
         dest.setTripDay(tripDay);
+        dest.setPlace(place);
 
-        // --- LOGIC MỚI CHO AI PLANNER ---
-        if (request.getPlaceId() != null) {
-            Place place = placeRepository.findById(request.getPlaceId())
-                    .orElseThrow(() -> new Exception("Không tìm thấy địa điểm đề xuất!"));
-            dest.setPlace(place);
+        if (place != null) {
+            // Place là nguồn dữ liệu chính thức khi thêm từ Recommendation.
+            dest.setPlaceName(place.getName());
+            dest.setLatitude(place.getLatitude());
+            dest.setLongitude(place.getLongitude());
+
+            String placeType = place.getPlaceType();
+
+            dest.setItemType(
+                    placeType == null || placeType.isBlank()
+                            ? "ATTRACTION"
+                            : placeType.trim().toUpperCase(Locale.ROOT)
+            );
+
+            dest.setNote(
+                    request.getNote() != null && !request.getNote().isBlank()
+                            ? request.getNote().trim()
+                            : place.getAddress()
+            );
+
+            // Ưu tiên chi phí tham khảo đã lưu trong Place.
+            dest.setEstimatedCost(
+                    place.getEstimatedCostMin() != null
+                            ? place.getEstimatedCostMin()
+                            : request.getEstimatedCost()
+            );
+
+        } else {
+            // Vẫn hỗ trợ địa điểm tự nhập không thuộc bảng places.
+            dest.setPlaceName(request.getPlaceName().trim());
+
+            dest.setLatitude(
+                    request.getLatitude() == null
+                            ? null
+                            : BigDecimal.valueOf(request.getLatitude())
+            );
+
+            dest.setLongitude(
+                    request.getLongitude() == null
+                            ? null
+                            : BigDecimal.valueOf(request.getLongitude())
+            );
+
+            String itemType = request.getItemType();
+
+            dest.setItemType(
+                    itemType == null || itemType.isBlank()
+                            ? "ATTRACTION"
+                            : itemType.trim().toUpperCase(Locale.ROOT)
+            );
+
+            dest.setNote(request.getNote());
+            dest.setEstimatedCost(request.getEstimatedCost());
         }
-        dest.setItemType(request.getItemType() != null ? request.getItemType() : "ATTRACTION");
+
+        BigDecimal cost = dest.getEstimatedCost();
+
+        if (cost != null
+                && (cost.signum() < 0 || cost.compareTo(MAX_MONEY) > 0)) {
+            throw new Exception("Chi phí ước tính không hợp lệ!");
+        }
+
+        int nextOrder = tripDestinationRepository
+                .findByTripDay_IdOrderByOrderIndexAsc(dayId)
+                .size();
+
+        dest.setOrderIndex(
+                request.getOrderIndex() != null
+                        ? request.getOrderIndex()
+                        : nextOrder
+        );
+
         dest.setStartTime(request.getStartTime());
         dest.setEndTime(request.getEndTime());
-        // ---------------------------------
+        dest.setIsVisited(Boolean.TRUE.equals(request.getIsVisited()));
 
-        dest.setPlaceName(request.getPlaceName());
-        dest.setLatitude(
-                request.getLatitude() != null
-                        ? BigDecimal.valueOf(request.getLatitude())
-                        : null
-        );
-
-        dest.setLongitude(
-                request.getLongitude() != null
-                        ? BigDecimal.valueOf(request.getLongitude())
-                        : null
-        );
-        dest.setNote(request.getNote());
-        dest.setEstimatedCost(request.getEstimatedCost());
-        dest.setOrderIndex(request.getOrderIndex());
+        dest.setTimeRange(request.getTimeRange());
+        dest.setCost(request.getCost());
 
         return tripDestinationRepository.save(dest);
     }
+
 
     private static final BigDecimal MAX_MONEY = new BigDecimal("1000000000000");
 

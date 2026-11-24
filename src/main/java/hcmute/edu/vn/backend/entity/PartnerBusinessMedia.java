@@ -50,6 +50,36 @@ public class PartnerBusinessMedia {
     @Column(name = "sort_order")
     private Integer sortOrder = 0;
 
+    @Column(name = "moderation_status", nullable = false, length = 20)
+    private String moderationStatus = "PENDING";
+
+    @Column(name = "alt_text", length = 500)
+    private String altText;
+
+    @Column(name = "uploaded_by")
+    private Long uploadedById;
+
+    @Column(name = "reviewed_by")
+    private Long reviewedById;
+
+    @Column(name = "reviewed_at")
+    private LocalDateTime reviewedAt;
+
     @Column(name = "created_at", insertable = false, updatable = false)
     private LocalDateTime createdAt;
+
+    /** Backward-compatible constructor matching the entity fields before moderation metadata was mapped. */
+    public PartnerBusinessMedia(Long id, PartnerBusiness business, String mediaType,
+                                String mediaUrl, String thumbnailUrl, String caption,
+                                Boolean cover, Integer sortOrder, LocalDateTime createdAt) {
+        this.id = id;
+        this.business = business;
+        this.mediaType = mediaType;
+        this.mediaUrl = mediaUrl;
+        this.thumbnailUrl = thumbnailUrl;
+        this.caption = caption;
+        this.cover = cover;
+        this.sortOrder = sortOrder;
+        this.createdAt = createdAt;
+    }
 }

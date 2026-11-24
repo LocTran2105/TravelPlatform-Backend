@@ -252,7 +252,7 @@ public class GeminiAiService {
         List<PlaceDiscoveryDTO> collectedRecommendations = new ArrayList<>();
         boolean placeDiscoveryRequest = isPlaceDiscoveryIntent(request.getUserMessage());
 
-        // Cold-start friendly flow: discover a broad, real POI list from Geoapify/OSM first.
+        // Cold-start friendly flow: discover a broad, real POI list from OpenStreetMap (OSM) first.
         // This does not require user-generated records to exist in the local places table.
         if (placeDiscoveryRequest) {
             try {
@@ -439,7 +439,7 @@ public class GeminiAiService {
         }
 
         if (placeDiscoveryRequest && collectedRecommendations.isEmpty()) {
-            finalAssistantText += " Hiện Geoapify/OSM và dữ liệu đã lưu chưa trả về địa điểm phù hợp; "
+            finalAssistantText += " Hiện OpenStreetMap (OSM) và dữ liệu đã lưu chưa trả về địa điểm phù hợp; "
                     + "mình không tự tạo tọa độ, giá hay đánh giá.";
         }
 
@@ -675,12 +675,12 @@ public class GeminiAiService {
 
     private String buildDiscoveredPlacesContext(List<PlaceDiscoveryDTO> recommendations) {
         if (recommendations == null || recommendations.isEmpty()) {
-            return "\n=== KẾT QUẢ TÌM ĐỊA ĐIỂM ===\nBackend chưa nhận được POI phù hợp từ Geoapify/OSM. "
+            return "\n=== KẾT QUẢ TÌM ĐỊA ĐIỂM ===\nBackend chưa nhận được POI phù hợp từ OpenStreetMap (OSM). "
                     + "Không được tự tạo Place Card, địa chỉ, tọa độ, rating hoặc giá.\n";
         }
 
         StringBuilder context = new StringBuilder(
-                "\n=== CÁC ĐỊA ĐIỂM ĐÃ ĐƯỢC BACKEND LẤY TỪ GEOAPIFY/OSM ===\n");
+                "\n=== CÁC ĐỊA ĐIỂM ĐÃ ĐƯỢC BACKEND LẤY TỪ OpenStreetMap (OSM) ===\n");
         context.append("Chỉ các địa điểm bên dưới mới được dùng làm Place Card. "
                 + "Dữ liệu giá và rating có thể không được nguồn cung cấp.\n");
 
@@ -761,7 +761,7 @@ public class GeminiAiService {
         prompt.append("5. Chỉ dùng verify_place_candidates khi người dùng nêu đích danh một địa điểm/cơ sở cụ thể cần kiểm tra.\n");
         prompt.append("6. Chỉ địa điểm có trong kết quả backend mới được xem là địa điểm đã xác minh và hiển thị thành Place Card kéo thả được.\n");
         prompt.append("7. Không tự bịa địa chỉ, tọa độ, ID, rating, số review, giá phòng hoặc giá vé.\n");
-        prompt.append("8. OSM/Geoapify không cung cấp bằng chứng rằng khách sạn còn phòng hoặc đang hoạt động; không khẳng định điều đó nếu chưa có nguồn khác.\n");
+        prompt.append("8. OpenStreetMap (OSM) không cung cấp bằng chứng rằng khách sạn còn phòng hoặc đang hoạt động; không khẳng định điều đó nếu chưa có nguồn khác.\n");
         prompt.append("9. Nếu rating hoặc estimatedPrice không có dữ liệu, hãy ghi chưa có dữ liệu; không tự điền 0.\n");
         prompt.append("10. Người dùng phải chủ động kéo thẻ hoặc bấm Thêm để ghi địa điểm vào Itinerary; không tự ý sửa lịch trình.\n");
         return prompt.toString();
@@ -771,7 +771,7 @@ public class GeminiAiService {
         Map searchPlaces = new HashMap();
         searchPlaces.put("name", "search_places");
         searchPlaces.put("description",
-                "Tìm POI thực tế theo category tại điểm đến của trip từ Geoapify Places API (dữ liệu OSM-backed), sau đó backend lưu vào places.");
+                "Tìm POI thực tế theo category tại điểm đến của trip từ OpenStreetMap thông qua Photon và Overpass API, sau đó backend lưu vào places.");
         searchPlaces.put("parameters", Map.of(
                 "type", "OBJECT",
                 "properties", Map.of(
@@ -785,7 +785,7 @@ public class GeminiAiService {
         Map searchRestaurants = new HashMap();
         searchRestaurants.put("name", "search_restaurants");
         searchRestaurants.put("description",
-                "Tìm nhà hàng, quán ăn hoặc quán cà phê thực tế tại điểm đến của chuyến đi qua Geoapify Places API.");
+                "Tìm nhà hàng, quán ăn hoặc quán cà phê thực tế tại điểm đến của chuyến đi qua OpenStreetMap thông qua Overpass API.");
         searchRestaurants.put("parameters", Map.of(
                 "type", "OBJECT",
                 "properties", Map.of(
@@ -797,7 +797,7 @@ public class GeminiAiService {
         Map searchAccommodations = new HashMap();
         searchAccommodations.put("name", "search_accommodations");
         searchAccommodations.put("description",
-                "Tìm khách sạn, homestay, nhà nghỉ và nơi lưu trú thực tế tại điểm đến của chuyến đi qua Geoapify Places API.");
+                "Tìm khách sạn, homestay, nhà nghỉ và nơi lưu trú thực tế tại điểm đến của chuyến đi qua OpenStreetMap thông qua Overpass API.");
         searchAccommodations.put("parameters", Map.of(
                 "type", "OBJECT",
                 "properties", Map.of(

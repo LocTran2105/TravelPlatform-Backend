@@ -40,7 +40,7 @@ public class PartnerMediaNoteService {
             BusinessMediaRequest request,
             String email
     ) {
-        PartnerBusiness business = requireOwnedBusiness(businessId, email);
+        PartnerBusiness business = prepareBusinessForChange(businessId, email);
         validateMediaRequest(request);
 
         if (Boolean.TRUE.equals(request.getCover())) {
@@ -77,7 +77,7 @@ public class PartnerMediaNoteService {
 
     @Transactional
     public void deleteMedia(Long businessId, Long mediaId, String email) {
-        requireOwnedBusiness(businessId, email);
+        prepareBusinessForChange(businessId, email);
 
         PartnerBusinessMedia media = mediaRepository
                 .findByIdAndBusiness_Id(mediaId, businessId)
@@ -112,7 +112,7 @@ public class PartnerMediaNoteService {
             BusinessNoteRequest request,
             String email
     ) {
-        PartnerBusiness business = requireOwnedBusiness(businessId, email);
+        PartnerBusiness business = prepareBusinessForChange(businessId, email);
         validateNoteRequest(request);
 
         PartnerBusinessNote note;
@@ -152,7 +152,7 @@ public class PartnerMediaNoteService {
 
     @Transactional
     public void deleteNote(Long businessId, Long noteId, String email) {
-        requireOwnedBusiness(businessId, email);
+        prepareBusinessForChange(businessId, email);
 
         PartnerBusinessNote note = noteRepository
                 .findByIdAndBusiness_Id(noteId, businessId)
@@ -182,6 +182,29 @@ public class PartnerMediaNoteService {
                 .orElseThrow(() -> new IllegalArgumentException(
                         "Không tìm thấy cơ sở kinh doanh hoặc bạn không có quyền quản lý."
                 ));
+    }
+
+    /**
+     * A submission is a frozen snapshot. Prevent changes while it is waiting
+     * for Admin review; any later edit to an approved/rejected/draft business
+     * must be submitted and reviewed again.
+     */
+    private PartnerBusiness prepareBusinessForChange(Long businessId, String email) {
+        PartnerBusiness business = requireOwnedBusiness(businessId, email);
+
+        if ("PENDING_REVIEW".equalsIgnoreCase(business.getVerificationStatus())) {
+            throw new IllegalStateException(
+                    "Địa điểm đang chờ Admin xét duyệt. Không thể chỉnh sửa cho đến khi có kết quả."
+            );
+        }
+
+        business.setVerificationStatus("DRAFT");
+        business.setPublicationStatus("DRAFT");
+        business.setVerifiedBy(null);
+        business.setVerifiedAt(null);
+        business.setRejectionReason(null);
+
+        return businessRepository.save(business);
     }
 
     private void validateMediaRequest(BusinessMediaRequest request) {

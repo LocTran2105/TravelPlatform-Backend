@@ -12,39 +12,35 @@ import java.util.List;
 import java.util.Optional;
 
 @Repository
-public interface PartnerSubmissionRepository
-        extends JpaRepository<PartnerSubmission, Long> {
+public interface PartnerSubmissionRepository extends JpaRepository<PartnerSubmission, Long> {
 
-    List<PartnerSubmission>
-    findByBusiness_IdOrderBySubmittedAtDesc(Long businessId);
+    List<PartnerSubmission> findByBusiness_IdOrderBySubmittedAtDesc(Long businessId);
 
-    List<PartnerSubmission>
-    findByStatusOrderBySubmittedAtAsc(String status);
+    List<PartnerSubmission> findByStatusOrderBySubmittedAtAsc(String status);
 
-    boolean existsByBusiness_IdAndStatus(
-            Long businessId,
-            String status
-    );
+    boolean existsByBusiness_IdAndStatus(Long businessId, String status);
 
-    long countByBusiness_Partner_IdAndStatus(
-            Long partnerId,
-            String status
-    );
+    long countByBusiness_Partner_IdAndStatus(Long partnerId, String status);
 
     long countByStatus(String status);
 
-    /**
-     * Khóa yêu cầu duyệt và tải Business + người gửi.
-     */
+    /** Read-only lookup for map candidate search; intentionally does not take a PESSIMISTIC lock. */
+    @Query("""
+            SELECT submission
+            FROM PartnerSubmission submission
+            JOIN FETCH submission.business
+            WHERE submission.id = :submissionId
+            """)
+    Optional<PartnerSubmission> findByIdWithBusiness(@Param("submissionId") Long submissionId);
+
+    /** Lock the submission while Admin approves/rejects it. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
-        SELECT submission
-        FROM PartnerSubmission submission
-        JOIN FETCH submission.business
-        JOIN FETCH submission.submittedBy
-        WHERE submission.id = :submissionId
-        """)
-    Optional<PartnerSubmission> findByIdForReview(
-            @Param("submissionId") Long submissionId
-    );
+            SELECT submission
+            FROM PartnerSubmission submission
+            JOIN FETCH submission.business
+            JOIN FETCH submission.submittedBy
+            WHERE submission.id = :submissionId
+            """)
+    Optional<PartnerSubmission> findByIdForReview(@Param("submissionId") Long submissionId);
 }

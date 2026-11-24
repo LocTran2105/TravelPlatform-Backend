@@ -38,10 +38,10 @@ public class PartnerBusinessNote {
     @Column(name = "content", nullable = false, columnDefinition = "TEXT")
     private String content;
 
-    @Column(name = "note_type", nullable = false, length = 30)
+    @Column(name = "note_type", nullable = false, length = 40)
     private String noteType = "TRAVEL_TIP";
 
-    @Column(name = "is_active", nullable = false)
+    @Column(name = "is_published", nullable = false)
     private Boolean active = true;
 
     @Column(name = "created_at", insertable = false, updatable = false)

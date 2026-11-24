@@ -15,6 +15,7 @@ import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
+import java.math.BigDecimal;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -34,7 +35,6 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.stream.Collectors;
-import java.math.BigDecimal;
 
 /**
  * Discovers real OpenStreetMap POIs using Photon first for named candidates
@@ -78,6 +78,16 @@ public class OsmPlaceDiscoveryService {
 
     @Value("${osm.photon.cache-ttl-seconds:86400}")
     private long photonCacheTtlSeconds;
+
+    /**
+     * Khi mọi endpoint Overpass đều lỗi (timeout/502/remark), tạm bỏ qua Overpass trong khoảng này
+     * để các lượt AI tiếp theo dùng DB fallback ngay thay vì chờ ~40s/lượt. Chỉ áp dụng cho discovery
+     * của Traveler; luồng tìm POI cho Admin vẫn luôn gọi Overpass để tránh tạo PARTNER nhầm.
+     */
+    @Value("${osm.overpass.cooldown-seconds:90}")
+    private long overpassCooldownSeconds;
+
+    private volatile Instant overpassCooldownUntil = Instant.EPOCH;
 
     private final ConcurrentMap<String, CachedPlaces> discoveryCache = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, CachedCoordinates> geocodeCache = new ConcurrentHashMap<>();
@@ -181,7 +191,11 @@ public class OsmPlaceDiscoveryService {
         return Optional.empty();
     }
 
-    /** Search broad POIs through Overpass, then fall back to category-safe DB records. */
+    /**
+     * Search broad POIs for travellers.
+     * Result = PARTNER công khai (đọc mới mỗi lần, không cache) + OSM (Overpass/cache) hoặc DB fallback.
+     * PARTNER đứng trước để không bị cắt bởi limit; RecommendationService xếp hạng lại sau đó.
+     */
     public List<Place> discoverAndPersistPlaces(
             String destination, String category, int radiusMeters, int limit) {
 
@@ -189,10 +203,105 @@ public class OsmPlaceDiscoveryService {
             return Collections.emptyList();
         }
 
+        long startedAt = System.currentTimeMillis();
         String normalizedDestination = destination.trim();
         String normalizedCategory = normalizeCategory(category);
         int safeRadius = Math.min(Math.max(radiusMeters, 1_000), MAX_RADIUS_METERS);
         int safeLimit = Math.min(Math.max(limit, 1), MAX_RESULTS);
+
+        double[] center = resolveDestinationCoordinates(normalizedDestination).orElse(null);
+        List<Place> osmOrFallback = discoverOsmOrFallback(
+                normalizedDestination, normalizedCategory, safeRadius, safeLimit, center);
+        List<Place> partners = findEligiblePartnerPlaces(
+                normalizedDestination, normalizedCategory, center, safeRadius);
+
+        LinkedHashMap<Long, Place> merged = new LinkedHashMap<>();
+        for (Place place : partners) {
+            if (place != null && place.getId() != null) merged.putIfAbsent(place.getId(), place);
+        }
+        for (Place place : osmOrFallback) {
+            if (place != null && place.getId() != null) merged.putIfAbsent(place.getId(), place);
+        }
+        List<Place> result = merged.values().stream().limit(safeLimit).collect(Collectors.toList());
+
+        log.info("Discovery xong: destination='{}', category={}, partner={}, osmOrDb={}, returned={}, providers={}, elapsedMs={}",
+                normalizedDestination, normalizedCategory, partners.size(), osmOrFallback.size(),
+                result.size(), countByProvider(result), System.currentTimeMillis() - startedAt);
+        return result;
+    }
+
+    /**
+     * Địa điểm PARTNER đủ điều kiện công khai cho điểm đến.
+     * Khớp nếu tên điểm đến tương đương ("Đà Lạt" ~ "TP. Đà Lạt" ~ "Da Lat, Lâm Đồng")
+     * hoặc nằm trong bán kính tìm kiếm quanh tâm điểm đến (khi Photon có tọa độ).
+     * Bảng PARTNER nhỏ vì mỗi dòng đều do Admin duyệt, nên lọc khớp tên ở Java là an toàn.
+     */
+    public List<Place> findEligiblePartnerPlaces(
+            String destination, String category, double[] center, int radiusMeters) {
+        List<Place> candidates;
+        try {
+            candidates = placeRepository.findEligiblePartnerPlacesByPlaceType(normalizeCategory(category));
+        } catch (Exception ex) {
+            log.warn("Không đọc được PARTNER places cho '{}'/{}: {}", destination, category, safeMessage(ex));
+            return Collections.emptyList();
+        }
+        if (candidates == null || candidates.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        String wantedKey = destinationKey(destination);
+        List<Place> matched = new ArrayList<>();
+        for (Place place : candidates) {
+            if (place == null) continue;
+            boolean sameDestination = !wantedKey.isEmpty()
+                    && destinationKeysMatch(wantedKey, destinationKey(place.getDestination()));
+            boolean withinRadius = center != null
+                    && place.getLatitude() != null && place.getLongitude() != null
+                    && calculateDistanceMeters(center[0], center[1],
+                    place.getLatitude().doubleValue(), place.getLongitude().doubleValue()) <= radiusMeters;
+            if (sameDestination || withinRadius) {
+                matched.add(place);
+            }
+        }
+        return matched;
+    }
+
+    /** "Thành phố Đà Lạt, Lâm Đồng" -> "da lat". Bỏ dấu, đ->d, bỏ tiền tố hành chính, chỉ lấy phần trước dấu phẩy. */
+    static String destinationKey(String raw) {
+        if (raw == null) return "";
+        String value = raw.split(",", 2)[0];
+        value = Normalizer.normalize(value, Normalizer.Form.NFD)
+                .replaceAll("\\p{M}+", "")
+                .replace('đ', 'd').replace('Đ', 'D')
+                .toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-z0-9 ]+", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+        value = value.replaceFirst("^(thanh pho|tp|tinh|thi xa|tx|huyen|quan|city of)\\s+", "");
+        return value.trim();
+    }
+
+    private static boolean destinationKeysMatch(String a, String b) {
+        if (a.isEmpty() || b.isEmpty()) return false;
+        if (a.equals(b)) return true;
+        // "da lat" khớp "da lat lam dong" nhưng "an" không khớp "an giang" (yêu cầu tối thiểu 4 ký tự).
+        boolean aIsShorter = a.length() <= b.length();
+        String shorter = aIsShorter ? a : b;
+        String longer = aIsShorter ? b : a;
+        return shorter.length() >= 4 && (" " + longer + " ").contains(" " + shorter + " ");
+    }
+
+    private static Map<String, Long> countByProvider(List<Place> places) {
+        return places.stream().collect(Collectors.groupingBy(
+                place -> place.getProvider() == null ? "UNKNOWN" : place.getProvider().toUpperCase(Locale.ROOT),
+                LinkedHashMap::new, Collectors.counting()));
+    }
+
+    /** OSM qua Overpass (có cache), hoặc DB fallback khi không có tâm/Overpass lỗi/rỗng. */
+    private List<Place> discoverOsmOrFallback(
+            String normalizedDestination, String normalizedCategory,
+            int safeRadius, int safeLimit, double[] center) {
+
         String cacheKey = normalizedDestination.toLowerCase(Locale.ROOT)
                 + "|" + normalizedCategory + "|" + safeRadius;
 
@@ -204,18 +313,27 @@ public class OsmPlaceDiscoveryService {
             discoveryCache.remove(cacheKey, cached);
         }
 
-        Optional<double[]> centerOpt = resolveDestinationCoordinates(normalizedDestination);
-        if (centerOpt.isEmpty()) {
+        if (center == null) {
             log.warn("Không có tâm tìm kiếm cho '{}'; dùng dữ liệu DB đúng category làm fallback.",
                     normalizedDestination);
             return getFallbackFromDb(normalizedDestination, normalizedCategory, safeLimit);
         }
 
-        double[] center = centerOpt.get();
+        if (Instant.now().isBefore(overpassCooldownUntil)) {
+            log.info("Overpass đang trong thời gian nghỉ tới {} sau lỗi liên tiếp; dùng DB fallback cho '{}'/{}.",
+                    overpassCooldownUntil, normalizedDestination, normalizedCategory);
+            return getFallbackFromDb(normalizedDestination, normalizedCategory, safeLimit);
+        }
+
         String query = buildOverpassQuery(normalizedCategory,
                 center[0], center[1], safeRadius);
 
-        List<Map> elements = fetchOverpassElements(query, normalizedDestination, normalizedCategory);
+        OverpassFetch fetch = fetchOverpass(query, normalizedDestination, normalizedCategory);
+        if (fetch.allEndpointsFailed()) {
+            overpassCooldownUntil = Instant.now().plusSeconds(Math.max(15L, overpassCooldownSeconds));
+            log.warn("Mọi endpoint Overpass đều lỗi; tạm dùng DB fallback tới {}.", overpassCooldownUntil);
+        }
+        List<Map> elements = fetch.elements();
         if (elements.isEmpty()) {
             log.warn("Overpass không trả POI cho destination='{}', category='{}'. Dùng DB fallback đúng loại.",
                     normalizedDestination, normalizedCategory);
@@ -283,6 +401,78 @@ public class OsmPlaceDiscoveryService {
         log.warn("Overpass có {} elements nhưng không lưu được POI hợp lệ cho '{}'. Dùng DB fallback.",
                 elements.size(), normalizedDestination);
         return getFallbackFromDb(normalizedDestination, normalizedCategory, safeLimit);
+    }
+
+    /**
+     * Searches OSM around the Partner-submitted coordinates for the Admin review map.
+     * Results are persisted as provider=OSM candidates, but are NEVER linked to a Business here.
+     */
+    public List<Place> discoverNearbyPlacesForAdmin(
+            String destination,
+            BigDecimal latitude,
+            BigDecimal longitude,
+            String businessType,
+            int radiusMeters,
+            int limit) {
+
+        if (latitude == null || longitude == null
+                || latitude.compareTo(BigDecimal.valueOf(-90)) < 0
+                || latitude.compareTo(BigDecimal.valueOf(90)) > 0
+                || longitude.compareTo(BigDecimal.valueOf(-180)) < 0
+                || longitude.compareTo(BigDecimal.valueOf(180)) > 0) {
+            throw new IllegalArgumentException("Business chưa có tọa độ hợp lệ để tìm OSM.");
+        }
+
+        String safeDestination = hasText(destination) ? destination.trim() : "Việt Nam";
+        if (safeDestination.length() > 100) safeDestination = safeDestination.substring(0, 100);
+        String category = normalizeCategory(businessType);
+        int safeRadius = Math.max(100, Math.min(radiusMeters, MAX_RADIUS_METERS));
+        int safeLimit = Math.max(1, Math.min(limit, 50));
+
+        String query = buildOverpassQuery(
+                category, latitude.doubleValue(), longitude.doubleValue(), safeRadius);
+        List<Map> elements = fetchOverpassElements(query, safeDestination, "ADMIN_" + category);
+        if (elements.isEmpty()) return Collections.emptyList();
+
+        List<Place> candidates = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        int processed = 0;
+        for (Map element : elements) {
+            if (processed++ >= MAX_ELEMENTS_TO_PROCESS || candidates.size() >= safeLimit) break;
+            if (element == null || !(element.get("tags") instanceof Map tags)) continue;
+            Object rawName = tags.get("name");
+            if (rawName == null || !hasText(String.valueOf(rawName))) continue;
+            if (!matchesOsmCategory(tags, category)) continue;
+
+            String osmType = String.valueOf(element.getOrDefault("type", "node")).toLowerCase(Locale.ROOT);
+            String osmId = String.valueOf(element.get("id"));
+            if (!hasText(osmId) || "null".equalsIgnoreCase(osmId)) continue;
+            String providerPlaceId = osmType + "/" + osmId;
+            if (!seen.add(providerPlaceId)) continue;
+
+            Double lat = extractLatitude(element);
+            Double lon = extractLongitude(element);
+            if (!isValidCoordinates(lat, lon)) continue;
+
+            try {
+                Place place = upsertOsmPlace(
+                        providerPlaceId,
+                        String.valueOf(rawName).trim(),
+                        buildOsmAddress(tags, safeDestination),
+                        safeDestination,
+                        category,
+                        lat,
+                        lon,
+                        extractOsmCategories(tags));
+                // AdminPartnerBusinessService filters out records assigned to another Business.
+                candidates.add(place);
+            } catch (Exception ex) {
+                log.warn("Không lưu được OSM candidate cho Admin '{}': {}",
+                        rawName, safeMessage(ex));
+            }
+        }
+
+        return candidates;
     }
 
     /**
@@ -734,6 +924,15 @@ public class OsmPlaceDiscoveryService {
     }
 
     private List<Map> fetchOverpassElements(String query, String destination, String category) {
+        return fetchOverpass(query, destination, category).elements();
+    }
+
+    /**
+     * allEndpointsFailed = true chỉ khi mọi endpoint đều lỗi (HTTP lỗi, timeout, remark, body rỗng).
+     * Một endpoint trả về 0 element hợp lệ nghĩa là khu vực không có POI, không phải sự cố.
+     */
+    private OverpassFetch fetchOverpass(String query, String destination, String category) {
+        boolean anyEndpointAnswered = false;
         for (String endpoint : resolveOverpassUrls()) {
             try {
                 HttpHeaders headers = buildHeaders();
@@ -764,9 +963,10 @@ public class OsmPlaceDiscoveryService {
                 if (rawElements instanceof List<?> list && !list.isEmpty()) {
                     log.info("OSM discovery thành công: destination='{}', category='{}', endpoint={}, rawElements={}",
                             destination, category, endpoint, list.size());
-                    return (List<Map>) list;
+                    return new OverpassFetch((List<Map>) list, false);
                 }
 
+                anyEndpointAnswered = true;
                 log.info("Overpass endpoint {} không có elements cho '{}'/{}", endpoint, destination, category);
             } catch (HttpStatusCodeException ex) {
                 log.warn("Overpass endpoint {} trả HTTP {} cho '{}'/{}: {}",
@@ -776,8 +976,10 @@ public class OsmPlaceDiscoveryService {
                         endpoint, destination, category, safeMessage(ex));
             }
         }
-        return Collections.emptyList();
+        return new OverpassFetch(Collections.emptyList(), !anyEndpointAnswered);
     }
+
+    private record OverpassFetch(List<Map> elements, boolean allEndpointsFailed) { }
 
     private HttpHeaders buildHeaders() {
         HttpHeaders headers = new HttpHeaders();
@@ -787,29 +989,87 @@ public class OsmPlaceDiscoveryService {
         return headers;
     }
 
-    private List<Place> getFallbackFromDb(String destination, String category, int limit) {
+
+    private List<Place> getFallbackFromDb(
+            String destination,
+            String category,
+            int limit
+    ) {
         LinkedHashMap<Long, Place> matching = new LinkedHashMap<>();
-        List<Place> exact = placeRepository.findByDestinationIgnoreCaseAndPlaceTypeIgnoreCase(
-                destination, category);
+
+        // Ưu tiên truy vấn đúng destination và category.
+        // Bao gồm OSM và PARTNER đủ điều kiện công khai.
+        List<Place> exact =
+                placeRepository.findPublicPlacesByDestinationAndPlaceType(
+                        destination,
+                        category
+                );
+
         if (exact != null) {
             for (Place place : exact) {
-                if (place != null && matchesCategory(place, category) && place.getId() != null) {
+                if (place != null
+                        && isDiscoverableProvider(place)
+                        && matchesCategory(place, category)
+                        && place.getId() != null) {
+
                     matching.putIfAbsent(place.getId(), place);
                 }
             }
         }
 
-        List<Place> allForDestination = placeRepository.findByDestinationIgnoreCase(destination);
+        // Bổ sung dữ liệu cũ cùng destination nếu cần.
+        List<Place> allForDestination =
+                placeRepository.findPublicPlacesByDestination(destination);
+
         if (allForDestination != null) {
             for (Place place : allForDestination) {
-                if (place != null && matchesCategory(place, category) && place.getId() != null) {
+                if (place != null
+                        && isDiscoverableProvider(place)
+                        && matchesCategory(place, category)
+                        && place.getId() != null) {
+
                     matching.putIfAbsent(place.getId(), place);
                 }
             }
         }
 
-        return matching.values().stream().limit(limit).collect(Collectors.toList());
+        List<Place> result = matching.values()
+                .stream()
+                .limit(limit)
+                .collect(Collectors.toList());
+
+        log.info(
+                "DB fallback hoàn tất: destination='{}', category={}, returned={}, providers={}",
+                destination,
+                category,
+                result.size(),
+                result.stream()
+                        .map(Place::getProvider)
+                        .distinct()
+                        .collect(Collectors.toList())
+        );
+
+        return result;
     }
+
+
+
+    /**
+     * Cho phép lấy cả địa điểm OSM và PARTNER.
+     * Điều kiện Business công khai của PARTNER đã được kiểm tra
+     * tại câu truy vấn native trong PlaceRepository.
+     */
+    private boolean isDiscoverableProvider(Place place) {
+        if (place == null || place.getProvider() == null) {
+            return false;
+        }
+
+        String provider = place.getProvider().trim();
+
+        return "OSM".equalsIgnoreCase(provider)
+                || "PARTNER".equalsIgnoreCase(provider);
+    }
+
 
     private boolean matchesCategory(Place place, String category) {
         String type = place.getPlaceType() == null
@@ -866,13 +1126,10 @@ public class OsmPlaceDiscoveryService {
         place.setAddress(address);
         place.setDestination(destination);
         place.setPlaceType(category);
-        place.setLatitude(
-                latitude != null ? BigDecimal.valueOf(latitude) : null
-        );
-
-        place.setLongitude(
-                longitude != null ? BigDecimal.valueOf(longitude) : null
-        );
+        // Place stores coordinates as DECIMAL/BigDecimal in the database.
+        // Keep missing OSM coordinates as null instead of inventing defaults.
+        place.setLatitude(latitude == null ? null : BigDecimal.valueOf(latitude));
+        place.setLongitude(longitude == null ? null : BigDecimal.valueOf(longitude));
         place.setCategories(categories);
         place.setFetchedAt(LocalDateTime.now());
         if (place.getCurrency() == null) {
