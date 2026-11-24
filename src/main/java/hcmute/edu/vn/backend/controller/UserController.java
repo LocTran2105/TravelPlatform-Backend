@@ -1,84 +1,77 @@
 package hcmute.edu.vn.backend.controller;
 
-import hcmute.edu.vn.backend.entity.User;
-import hcmute.edu.vn.backend.repository.UserRepository;
+import hcmute.edu.vn.backend.dto.UpdateProfileRequest;
+import hcmute.edu.vn.backend.dto.UserMinimalDTO;
+import hcmute.edu.vn.backend.dto.UserProfileDTO;
+import hcmute.edu.vn.backend.service.UserService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 import java.util.Map;
-import java.util.Objects;
 
 @RestController
 @RequestMapping("/api/users")
 public class UserController {
 
     @Autowired
-    private UserRepository userRepository;
+    private UserService userService;
 
-    @Autowired
-    private PasswordEncoder passwordEncoder;
-
-    // Hàm tiện ích lấy email từ JWT hiện tại
     private String getCurrentUserEmail() {
         return SecurityContextHolder.getContext().getAuthentication().getName();
     }
 
-    // 0. Lấy thông tin cá nhân (dùng cho xác thực ngầm khi mở app)
+    // 1. Lấy thông tin cá nhân
     @GetMapping("/profile")
     public ResponseEntity<?> getProfile() {
-        String email = getCurrentUserEmail();
-        return userRepository.findByEmail(email)
-                .<ResponseEntity<?>>map(user -> ResponseEntity.ok(Map.of(
-                        "email", user.getEmail(),
-                        "fullName", Objects.toString(user.getFullName(), ""),
-                        "phoneNumber", Objects.toString(user.getPhoneNumber(), ""),
-                        "role", Objects.toString(user.getRole(), "")
-                )))
-                .orElseGet(() -> ResponseEntity.status(404).body("Không tìm thấy người dùng"));
-    }
-
-    // 1. Cập nhật thông tin cá nhân
-    @PutMapping("/profile")
-    public ResponseEntity<?> updateProfile(@RequestBody Map<String, String> request) {
         try {
             String email = getCurrentUserEmail();
-            User user = userRepository.findByEmail(email)
-                    .orElseThrow(() -> new Exception("Không tìm thấy người dùng"));
+            UserProfileDTO profile = userService.getUserProfile(email);
+            return ResponseEntity.ok(profile);
+        } catch (Exception e) {
+            return ResponseEntity.status(404).body(e.getMessage());
+        }
+    }
 
-            user.setFullName(request.get("fullName"));
-            // Bạn có thể thêm check trùng lặp số điện thoại ở đây nếu cần
-            user.setPhoneNumber(request.get("phoneNumber"));
-
-            userRepository.save(user);
+    // 2. Cập nhật thông tin cá nhân
+    @PutMapping("/profile")
+    public ResponseEntity<?> updateProfile(@RequestBody UpdateProfileRequest request) {
+        try {
+            String email = getCurrentUserEmail();
+            userService.updateProfile(email, request);
             return ResponseEntity.ok("Cập nhật thông tin thành công!");
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(e.getMessage());
         }
     }
 
-    // 2. Đổi mật khẩu
+    // 3. Đổi mật khẩu
     @PutMapping("/change-password")
     public ResponseEntity<?> changePassword(@RequestBody Map<String, String> request) {
         try {
             String email = getCurrentUserEmail();
-            User user = userRepository.findByEmail(email)
-                    .orElseThrow(() -> new Exception("Không tìm thấy người dùng"));
-
             String oldPassword = request.get("oldPassword");
             String newPassword = request.get("newPassword");
 
-            if (!passwordEncoder.matches(oldPassword, user.getPasswordHash())) {
-                return ResponseEntity.badRequest().body("Mật khẩu hiện tại không chính xác!");
-            }
-
-            user.setPasswordHash(passwordEncoder.encode(newPassword));
-            userRepository.save(user);
-
+            userService.changePassword(email, oldPassword, newPassword);
             return ResponseEntity.ok("Đổi mật khẩu thành công!");
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
+
+    //4. Trang profile
+    @GetMapping("/{username}")
+    public ResponseEntity<?> getPublicProfile(@PathVariable String username, java.security.Principal principal) {
+        try {
+            // Lấy email của người đang thao tác (nếu có đăng nhập)
+            String currentUserEmail = (principal != null) ? principal.getName() : null;
+
+            // Truyền email xuống Service để check Follow
+            UserMinimalDTO publicProfile = userService.getPublicProfile(username, currentUserEmail);
+            return ResponseEntity.ok(publicProfile);
+        } catch (Exception e) {
+            return ResponseEntity.status(404).body(e.getMessage());
         }
     }
 }

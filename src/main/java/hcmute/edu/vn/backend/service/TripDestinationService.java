@@ -8,7 +8,6 @@ import hcmute.edu.vn.backend.entity.TripDestination;
 import hcmute.edu.vn.backend.repository.PlaceRepository; // Thêm repo này
 import hcmute.edu.vn.backend.repository.TripDayRepository;
 import hcmute.edu.vn.backend.repository.TripDestinationRepository;
-import hcmute.edu.vn.backend.repository.TripMemberRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,8 +15,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalTime;
 import java.time.format.DateTimeParseException;
-import org.springframework.transaction.annotation.Transactional;
 import java.util.Locale;
+import java.util.Objects;
 
 @Service
 public class TripDestinationService {
@@ -28,44 +27,25 @@ public class TripDestinationService {
     private TripDayRepository tripDayRepository;
 
     @Autowired
-    private TripMemberRepository tripMemberRepository;
+    private TripAccessService accessService;
+
+    @Autowired
+    private TripActivityService activityService;
 
     @Autowired
     private PlaceRepository placeRepository; // Inject thêm PlaceRepository
 
-
-    @Transactional
-    public TripDestination addDestinationToDay(
-            Long dayId,
-            DestinationRequest request,
-            String userEmail
-    ) throws Exception {
-
+    @Transactional(rollbackFor = Exception.class)
+    public TripDestination addDestinationToDay(Long dayId, DestinationRequest request, String userEmail) throws Exception {
         if (request == null) {
             throw new Exception("Dữ liệu địa điểm không hợp lệ!");
         }
 
         TripDay tripDay = tripDayRepository.findById(dayId)
-                .orElseThrow(() ->
-                        new Exception("Không tìm thấy ngày của chuyến đi!")
-                );
+                .orElseThrow(() -> new Exception("Không tìm thấy ngày của chuyến đi!"));
 
-        Trip trip = tripDay.getTrip();
-        Long tripId = trip.getId();
-
-        boolean isOwner = trip.getUser() != null
-                && trip.getUser().getEmail().equalsIgnoreCase(userEmail);
-
-        boolean isCompanion =
-                tripMemberRepository.existsByTripIdAndUserEmail(
-                        tripId, userEmail
-                );
-
-        if (!isOwner && !isCompanion) {
-            throw new Exception(
-                    "Bạn không có quyền chỉnh sửa hành trình này!"
-            );
-        }
+        // Chủ chuyến đi hoặc tripmate được chỉnh sửa (người chỉ xem bị từ chối)
+        accessService.requireEdit(tripDay.getTrip(), userEmail);
 
         Place place = null;
 
@@ -192,47 +172,88 @@ public class TripDestinationService {
         dest.setTimeRange(request.getTimeRange());
         dest.setCost(request.getCost());
 
-        return tripDestinationRepository.save(dest);
+        TripDestination saved = tripDestinationRepository.save(dest);
+        activityService.log(tripDay.getTrip(), userEmail, TripActivityService.DESTINATION_ADDED,
+                "DESTINATION", saved.getId(), saved.getPlaceName(), "Day " + tripDay.getDayNumber());
+        return saved;
     }
 
 
     private static final BigDecimal MAX_MONEY = new BigDecimal("1000000000000");
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public void updateDestinationProperty(Long destinationId, String field, Object value, String userEmail) throws Exception {
         TripDestination dest = tripDestinationRepository.findById(destinationId)
                 .orElseThrow(() -> new Exception("Không tìm thấy địa điểm trong lịch trình!"));
 
         Trip trip = dest.getTripDay().getTrip();
-        boolean isOwner = trip.getUser().getEmail().equalsIgnoreCase(userEmail);
-        boolean isCompanion = tripMemberRepository.existsByTripIdAndUserEmail(trip.getId(), userEmail);
-        if (!isOwner && !isCompanion) {
-            throw new Exception("Bạn không có quyền chỉnh sửa hành trình này!");
-        }
+        // Chủ chuyến đi hoặc tripmate được chỉnh sửa (người chỉ xem bị từ chối)
+        accessService.requireEdit(trip, userEmail);
+
+        // Ghi lại giá trị cũ để chỉ ghi lịch sử khi có thay đổi thật
+        // (ô ghi chú gửi lên mỗi lần rời ô nhập, kể cả khi chưa sửa gì)
+        String action = null;
+        String detail = null;
+        boolean changed = false;
+        boolean coalesce = true;
 
         switch (field) {
-            case "note":
-                dest.setNote(value != null ? value.toString() : null);
+            case "note": {
+                String newNote = value != null ? value.toString() : null;
+                changed = !Objects.equals(blankToNull(dest.getNote()), blankToNull(newNote));
+                dest.setNote(newNote);
+                action = TripActivityService.DESTINATION_NOTE_CHANGED;
                 break;
-            case "isVisited":
-                dest.setIsVisited(Boolean.valueOf(value.toString()));
+            }
+            case "isVisited": {
+                boolean newVisited = Boolean.parseBoolean(String.valueOf(value));
+                changed = !Objects.equals(dest.getIsVisited(), newVisited);
+                dest.setIsVisited(newVisited);
+                action = newVisited ? TripActivityService.DESTINATION_VISITED : TripActivityService.DESTINATION_UNVISITED;
+                coalesce = false;
                 break;
-            case "time": // Cũ
-                dest.setTimeRange(value != null ? value.toString() : null);
+            }
+            case "time": { // Giờ ghé thăm dạng "08:00 - 10:00" (ô giờ trong TripDetail)
+                String newTime = value != null ? value.toString() : null;
+                changed = !Objects.equals(blankToNull(dest.getTimeRange()), blankToNull(newTime));
+                dest.setTimeRange(newTime);
+                action = TripActivityService.DESTINATION_TIME_CHANGED;
+                detail = blankToNull(newTime);
                 break;
-            case "cost": // Cũ
-                dest.setCost(value != null ? value.toString() : null);
+            }
+            case "cost": { // Cũ
+                String newCost = value != null ? value.toString() : null;
+                changed = !Objects.equals(blankToNull(dest.getCost()), blankToNull(newCost));
+                dest.setCost(newCost);
+                action = TripActivityService.DESTINATION_COST_CHANGED;
+                detail = blankToNull(newCost);
                 break;
-            case "estimatedCost":
-                dest.setEstimatedCost(parseMoney(value));
+            }
+            case "estimatedCost": {
+                BigDecimal newCost = parseMoney(value);
+                changed = dest.getEstimatedCost() == null || dest.getEstimatedCost().compareTo(newCost) != 0;
+                dest.setEstimatedCost(newCost);
+                action = TripActivityService.DESTINATION_COST_CHANGED;
+                detail = newCost.stripTrailingZeros().toPlainString();
                 break;
+            }
             // --- LOGIC MỚI CHO CÁC TRƯỜNG THỜI GIAN/LOẠI ---
-            case "startTime":
-                dest.setStartTime(parseTime(value));
+            case "startTime": {
+                LocalTime newStart = parseTime(value);
+                changed = !Objects.equals(dest.getStartTime(), newStart);
+                dest.setStartTime(newStart);
+                action = TripActivityService.DESTINATION_TIME_CHANGED;
+                detail = formatTimeSlot(dest.getStartTime(), dest.getEndTime());
                 break;
-            case "endTime":
-                dest.setEndTime(parseTime(value));
+            }
+            case "endTime": {
+                LocalTime newEnd = parseTime(value);
+                changed = !Objects.equals(dest.getEndTime(), newEnd);
+                dest.setEndTime(newEnd);
+                action = TripActivityService.DESTINATION_TIME_CHANGED;
+                detail = formatTimeSlot(dest.getStartTime(), dest.getEndTime());
                 break;
+            }
             case "itemType":
                 dest.setItemType(value != null ? value.toString() : "ATTRACTION");
                 break;
@@ -242,6 +263,50 @@ public class TripDestinationService {
         }
 
         tripDestinationRepository.save(dest);
+
+        if (changed && action != null) {
+            if (coalesce) {
+                activityService.logCoalesced(trip, userEmail, action, "DESTINATION", dest.getId(), dest.getPlaceName(), detail);
+            } else {
+                activityService.log(trip, userEmail, action, "DESTINATION", dest.getId(), dest.getPlaceName(), detail);
+            }
+        }
+    }
+
+    /**
+     * Xóa một địa điểm khỏi lịch trình (chủ chuyến đi hoặc tripmate; người chỉ xem bị từ chối).
+     * Chỉ xóa dòng trip_destinations: Place gốc trong bảng places được giữ nguyên, khoản chi đã gắn
+     * vẫn còn vì FK expenses.trip_destination_id là ON DELETE SET NULL.
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void deleteDestination(Long destinationId, String userEmail) throws Exception {
+        TripDestination dest = tripDestinationRepository.findById(destinationId)
+                .orElseThrow(() -> new Exception("Không tìm thấy địa điểm trong lịch trình!"));
+
+        TripDay tripDay = dest.getTripDay();
+        Trip trip = tripDay.getTrip();
+        accessService.requireEdit(trip, userEmail);
+
+        // TripDay.destinations có cascade ALL: gỡ khỏi collection để Hibernate không lưu lại khi flush.
+        if (tripDay.getDestinations() != null) {
+            tripDay.getDestinations().remove(dest);
+        }
+        tripDestinationRepository.delete(dest);
+
+        // Ghi lịch sử thao tác: bật dòng dưới nếu TripActivityService có hằng số cho thao tác xóa
+        // activityService.log(trip, userEmail, TripActivityService.DESTINATION_REMOVED,
+        //         "DESTINATION", destinationId, dest.getPlaceName(), "Day " + tripDay.getDayNumber());
+    }
+
+    private static String blankToNull(String s) {
+        return s == null || s.isBlank() ? null : s.trim();
+    }
+
+    /** "08:00 - 10:00", "08:00" hoặc null nếu chưa có giờ nào. */
+    private static String formatTimeSlot(LocalTime start, LocalTime end) {
+        if (start == null && end == null) return null;
+        if (start != null && end != null) return start + " - " + end;
+        return String.valueOf(start != null ? start : end);
     }
 
     private BigDecimal parseMoney(Object value) throws Exception {

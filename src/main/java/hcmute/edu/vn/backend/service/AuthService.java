@@ -50,7 +50,7 @@ public class AuthService {
         if (userRepository.existsByEmail(signUpRequest.getEmail())) {
             throw new Exception("Email đã được sử dụng!");
         }
-        if (userRepository.existsByPhoneNumber(signUpRequest.getPhoneNumber())) {
+        if (signUpRequest.getPhoneNumber() != null && userRepository.existsByPhoneNumber(signUpRequest.getPhoneNumber())) {
             throw new Exception("Số điện thoại đã được sử dụng!");
         }
 
@@ -60,6 +60,33 @@ public class AuthService {
         user.setFullName(signUpRequest.getFullName());
         user.setPasswordHash(passwordEncoder.encode(signUpRequest.getPassword()));
         user.setRole("ROLE_TRAVELLER");
+        user.setStatus("ACTIVE");
+
+        // --- BỔ SUNG: LOGIC TẠO USERNAME TỰ ĐỘNG ---
+        // 1. Lấy phần trước @ của email, chuyển chữ thường, loại bỏ ký tự lạ
+        String baseUsername = signUpRequest.getEmail().split("@")[0]
+                .toLowerCase()
+                .replaceAll("[^a-z0-9._-]", "");
+
+        // 2. Rút gọn tối đa 7 ký tự để chừa chỗ ghép thêm số (vì DB cho max 10)
+        if (baseUsername.length() > 7) {
+            baseUsername = baseUsername.substring(0, 7);
+        }
+        // DB yêu cầu tối thiểu 3 ký tự
+        if (baseUsername.length() < 3) {
+            baseUsername = baseUsername + "123";
+        }
+
+        // 3. Kiểm tra trùng lặp, nếu trùng thì cộng thêm số (vd: loc, loc1, loc2)
+        String finalUsername = baseUsername;
+        int counter = 1;
+        while (userRepository.existsByUsername(finalUsername)) {
+            finalUsername = baseUsername + counter;
+            counter++;
+        }
+
+        user.setUsername(finalUsername);
+        // ------------------------------------------
 
         userRepository.save(user);
     }

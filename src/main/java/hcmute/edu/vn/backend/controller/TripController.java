@@ -2,12 +2,18 @@ package hcmute.edu.vn.backend.controller;
 
 import hcmute.edu.vn.backend.dto.BudgetRequest;
 import hcmute.edu.vn.backend.dto.TripRequest;
+import hcmute.edu.vn.backend.dto.TripSummaryResponse;
+import hcmute.edu.vn.backend.dto.TripVisibilityRequest;
+import hcmute.edu.vn.backend.service.TripAccessException;
+import hcmute.edu.vn.backend.service.CoverImageService;
 import hcmute.edu.vn.backend.service.TripService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import hcmute.edu.vn.backend.entity.Trip;
 import java.security.Principal;
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -16,6 +22,9 @@ public class TripController {
 
     @Autowired
     private TripService tripService;
+
+    @Autowired
+    private CoverImageService coverImageService;
 
     // API 1: Tạo chuyến đi mới
     @PostMapping
@@ -31,7 +40,9 @@ public class TripController {
     @GetMapping("/my-trips")
     public ResponseEntity<?> getMyTrips(Principal principal) {
         try {
-            return ResponseEntity.ok(tripService.getMyTrips(principal.getName()));
+            List<Trip> trips = tripService.getMyTrips(principal.getName());
+            coverImageService.applySuggestions(trips);
+            return ResponseEntity.ok(trips);
         } catch (Exception e) {
             return ResponseEntity.badRequest().body("Lỗi: " + e.getMessage());
         }
@@ -41,7 +52,9 @@ public class TripController {
     @GetMapping("/{tripId}")
     public ResponseEntity<?> getTripDetails(@PathVariable Long tripId, Principal principal) {
         try {
-            return ResponseEntity.ok(tripService.getTripDetails(tripId, principal.getName()));
+            Trip trip = tripService.getTripDetails(tripId, principal.getName());
+            coverImageService.applySuggestion(trip);
+            return ResponseEntity.ok(trip);
         } catch (Exception e) {
             return ResponseEntity.badRequest().body("Lỗi: " + e.getMessage());
         }
@@ -52,6 +65,32 @@ public class TripController {
     public ResponseEntity<?> updateBudget(@PathVariable Long tripId, @RequestBody BudgetRequest request, Principal principal) {
         try {
             return ResponseEntity.ok(tripService.updateBudget(tripId, request.getTotalBudget(), principal.getName()));
+        } catch (TripAccessException e) {
+            return ResponseEntity.status(e.getStatus()).body(e.getMessage());
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("Lỗi: " + e.getMessage());
+        }
+    }
+
+    // API 3c: Danh sách chuyến đi của một người (trang cá nhân) - có áp dụng quyền hiển thị
+    @GetMapping("/user/{username}")
+    public ResponseEntity<?> getUserTrips(@PathVariable String username, Principal principal) {
+        try {
+            String viewerEmail = (principal != null) ? principal.getName() : null;
+            List<TripSummaryResponse> trips = tripService.getUserTrips(username, viewerEmail);
+            coverImageService.applySuggestionsToSummaries(trips);
+            return ResponseEntity.ok(trips);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("Lỗi: " + e.getMessage());
+        }
+    }
+
+    // API 3d: Đổi quyền hiển thị của chuyến đi (PUBLIC / FOLLOWERS / FRIENDS / PRIVATE)
+    @PatchMapping("/{tripId}/visibility")
+    public ResponseEntity<?> updateVisibility(@PathVariable Long tripId, @RequestBody TripVisibilityRequest request, Principal principal) {
+        try {
+            String visibility = tripService.updateVisibility(tripId, request.getVisibility(), principal.getName());
+            return ResponseEntity.ok(Map.of("visibility", visibility));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body("Lỗi: " + e.getMessage());
         }
@@ -76,10 +115,5 @@ public class TripController {
         } catch (Exception e) {
             return ResponseEntity.badRequest().body("Lỗi: " + e.getMessage());
         }
-    }
-    // API 6: Kiểm tra email bạn đồng hành đã đăng ký chưa
-    @GetMapping("/check-email")
-    public ResponseEntity<?> checkEmail(@RequestParam String email) {
-        return ResponseEntity.ok(Map.of("exists", tripService.isEmailRegistered(email)));
     }
 }

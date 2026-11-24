@@ -24,4 +24,6 @@ public interface TripRepository extends JpaRepository<Trip, Long> {
            OR (m.user.id = :userId AND m.status = 'ACCEPTED')
         """)
     List<Trip> findAllTripsOfUser(@Param("userId") Long userId);
+
+    List<Trip> findByUser_IdOrderByIdDesc(Long userId);
 }
