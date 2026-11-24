@@ -35,6 +35,8 @@ public class ExpenseService {
     private TripDestinationRepository tripDestinationRepository;
     @Autowired
     private TripAccessService accessService;
+    @Autowired
+    private TripActivityService activityService;
 
     // ==========================================
     // HÀM HỖ TRỢ
@@ -165,7 +167,10 @@ public class ExpenseService {
             expense.getSplits().add(split);
         }
 
-        return toResponse(expenseRepository.save(expense));
+        Expense saved = expenseRepository.save(expense);
+        activityService.log(trip, currentUser, TripActivityService.EXPENSE_ADDED, "EXPENSE", saved.getId(),
+                saved.getTitle(), amount.toPlainString());
+        return toResponse(saved);
     }
 
     // ==========================================
@@ -206,6 +211,8 @@ public class ExpenseService {
         if (!isOwner && !isPayer) {
             throw new Exception("Chỉ người trả tiền hoặc chủ chuyến đi mới được xóa khoản chi này!");
         }
+        activityService.log(trip, email, TripActivityService.EXPENSE_DELETED, "EXPENSE", expense.getId(),
+                expense.getTitle(), expense.getAmount().toPlainString());
         expenseRepository.delete(expense);
     }
 

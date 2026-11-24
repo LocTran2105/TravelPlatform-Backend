@@ -40,6 +40,9 @@ public class TripService {
     @Autowired
     private TripAccessService accessService;
 
+    @Autowired
+    private TripActivityService activityService;
+
     private static final Set<String> VISIBILITIES =
             Set.of("PUBLIC", "FOLLOWERS", "FRIENDS", "PRIVATE");
 
@@ -199,8 +202,13 @@ public class TripService {
         // Chủ chuyến đi hoặc tripmate được chỉnh sửa (người chỉ xem bị từ chối)
         accessService.requireEdit(trip, userEmail);
 
+        BigDecimal oldBudget = trip.getTotalBudget();
         trip.setTotalBudget(totalBudget);
         tripRepository.save(trip);
+        if (oldBudget == null || oldBudget.compareTo(totalBudget) != 0) {
+            activityService.logCoalesced(trip, userEmail, TripActivityService.BUDGET_CHANGED, "TRIP", trip.getId(),
+                    null, totalBudget.stripTrailingZeros().toPlainString());
+        }
         return trip.getTotalBudget();
     }
 
@@ -344,6 +352,18 @@ public class TripService {
         dto.setEndDate(trip.getEndDate());
         dto.setVisibility(trip.getVisibility());
         dto.setMemberCount(trip.getMemberCount());
+        dto.setCoverImageUrl(trip.getCoverImageUrl());
+        dto.setPlaceCount(countPlaces(trip));
         return dto;
+    }
+
+    /** Tổng số địa điểm của chuyến đi (cùng cách đếm với trang chủ: cộng điểm đến của mọi ngày). */
+    private static int countPlaces(Trip trip) {
+        if (trip.getTripDays() == null) return 0;
+        int total = 0;
+        for (TripDay day : trip.getTripDays()) {
+            if (day != null && day.getDestinations() != null) total += day.getDestinations().size();
+        }
+        return total;
     }
 }

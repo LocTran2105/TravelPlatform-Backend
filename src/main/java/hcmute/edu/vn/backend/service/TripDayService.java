@@ -6,6 +6,7 @@ import hcmute.edu.vn.backend.repository.TripDayRepository;
 import hcmute.edu.vn.backend.repository.TripRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 
 @Service
@@ -16,19 +17,28 @@ public class TripDayService {
     @Autowired
     private TripRepository tripRepository;
 
+    @Autowired
+    private TripAccessService accessService;
+
+    @Autowired
+    private TripActivityService activityService;
+
+    @Transactional(rollbackFor = Exception.class)
     public TripDay addDayToTrip(Long tripId, Integer dayNumber, LocalDate dayDate, String userEmail) throws Exception {
         Trip trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new Exception("Không tìm thấy chuyến đi!"));
 
-        if (!trip.getUser().getEmail().equals(userEmail)) {
-            throw new Exception("Chỉ chủ chuyến đi mới được thêm ngày!");
-        }
+        // Chủ chuyến đi hoặc tripmate được chỉnh sửa (người chỉ xem bị từ chối)
+        accessService.requireEdit(trip, userEmail);
 
         TripDay tripDay = new TripDay();
         tripDay.setTrip(trip);
         tripDay.setDayNumber(dayNumber);
         tripDay.setDayDate(dayDate);
 
-        return tripDayRepository.save(tripDay);
+        TripDay saved = tripDayRepository.save(tripDay);
+        activityService.log(trip, userEmail, TripActivityService.DAY_ADDED, "DAY", saved.getId(),
+                "Day " + dayNumber, dayDate != null ? dayDate.toString() : null);
+        return saved;
     }
 }

@@ -2,14 +2,18 @@ package hcmute.edu.vn.backend.controller;
 
 import hcmute.edu.vn.backend.dto.BudgetRequest;
 import hcmute.edu.vn.backend.dto.TripRequest;
+import hcmute.edu.vn.backend.dto.TripSummaryResponse;
 import hcmute.edu.vn.backend.dto.TripVisibilityRequest;
 import hcmute.edu.vn.backend.service.TripAccessException;
+import hcmute.edu.vn.backend.service.CoverImageService;
 import hcmute.edu.vn.backend.service.TripService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import hcmute.edu.vn.backend.entity.Trip;
 import java.security.Principal;
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -18,6 +22,9 @@ public class TripController {
 
     @Autowired
     private TripService tripService;
+
+    @Autowired
+    private CoverImageService coverImageService;
 
     // API 1: Tạo chuyến đi mới
     @PostMapping
@@ -33,7 +40,9 @@ public class TripController {
     @GetMapping("/my-trips")
     public ResponseEntity<?> getMyTrips(Principal principal) {
         try {
-            return ResponseEntity.ok(tripService.getMyTrips(principal.getName()));
+            List<Trip> trips = tripService.getMyTrips(principal.getName());
+            coverImageService.applySuggestions(trips);
+            return ResponseEntity.ok(trips);
         } catch (Exception e) {
             return ResponseEntity.badRequest().body("Lỗi: " + e.getMessage());
         }
@@ -43,7 +52,9 @@ public class TripController {
     @GetMapping("/{tripId}")
     public ResponseEntity<?> getTripDetails(@PathVariable Long tripId, Principal principal) {
         try {
-            return ResponseEntity.ok(tripService.getTripDetails(tripId, principal.getName()));
+            Trip trip = tripService.getTripDetails(tripId, principal.getName());
+            coverImageService.applySuggestion(trip);
+            return ResponseEntity.ok(trip);
         } catch (Exception e) {
             return ResponseEntity.badRequest().body("Lỗi: " + e.getMessage());
         }
@@ -66,7 +77,9 @@ public class TripController {
     public ResponseEntity<?> getUserTrips(@PathVariable String username, Principal principal) {
         try {
             String viewerEmail = (principal != null) ? principal.getName() : null;
-            return ResponseEntity.ok(tripService.getUserTrips(username, viewerEmail));
+            List<TripSummaryResponse> trips = tripService.getUserTrips(username, viewerEmail);
+            coverImageService.applySuggestionsToSummaries(trips);
+            return ResponseEntity.ok(trips);
         } catch (Exception e) {
             return ResponseEntity.badRequest().body("Lỗi: " + e.getMessage());
         }

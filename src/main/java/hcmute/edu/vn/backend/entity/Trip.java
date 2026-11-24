@@ -70,6 +70,14 @@ public class Trip {
     @Column(name = "total_reviews")
     private Integer totalReviews = 0;
 
+    // Ảnh bìa riêng của chuyến đi (URL Cloudinary: từ thư viện hoặc người dùng tự tải lên). NULL = chưa chọn.
+    @Column(name = "cover_image_url", length = 500)
+    private String coverImageUrl;
+
+    // Ảnh gợi ý theo điểm đến, chỉ để trả về cho frontend (không lưu DB).
+    @Transient
+    private String suggestedCoverUrl;
+
     // Thêm đoạn này vào bên trong class Trip.java
     @OneToOne(mappedBy = "trip", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private TripPreference preference;

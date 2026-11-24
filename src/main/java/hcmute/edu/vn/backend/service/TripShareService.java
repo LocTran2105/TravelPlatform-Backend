@@ -39,17 +39,20 @@ public class TripShareService {
     private final TripRepository tripRepository;
     private final UserRepository userRepository;
     private final TripInvitationService invitationService;
+    private final TripActivityService activityService;
 
     public TripShareService(TripShareLinkRepository linkRepository,
                             TripMemberRepository memberRepository,
                             TripRepository tripRepository,
                             UserRepository userRepository,
-                            TripInvitationService invitationService) {
+                            TripInvitationService invitationService,
+                            TripActivityService activityService) {
         this.linkRepository = linkRepository;
         this.memberRepository = memberRepository;
         this.tripRepository = tripRepository;
         this.userRepository = userRepository;
         this.invitationService = invitationService;
+        this.activityService = activityService;
     }
 
     // ==================================================================
@@ -135,6 +138,8 @@ public class TripShareService {
                     member.setRole(link.getRole());
                     memberRepository.save(member);
                     recount(trip);
+                    activityService.log(trip, user, TripActivityService.MEMBER_ROLE_CHANGED, "MEMBER", user.getId(),
+                            user.getFullName(), effectiveRole(member.getRole()));
                 }
                 status = "ALREADY";
             } else {
@@ -143,6 +148,8 @@ public class TripShareService {
                 member.setStatus("ACCEPTED");
                 memberRepository.save(member);
                 recount(trip);
+                activityService.log(trip, user, TripActivityService.MEMBER_JOINED, "MEMBER", user.getId(),
+                        user.getFullName(), effectiveRole(member.getRole()));
                 status = "JOINED";
             }
             finalRole = effectiveRole(member.getRole());
@@ -155,6 +162,8 @@ public class TripShareService {
             member.setStatus("ACCEPTED");
             memberRepository.save(member);
             recount(trip);
+            activityService.log(trip, user, TripActivityService.MEMBER_JOINED, "MEMBER", user.getId(),
+                    user.getFullName(), link.getRole());
             status = "JOINED";
             finalRole = link.getRole();
         }
@@ -192,9 +201,15 @@ public class TripShareService {
         Trip trip = loadTrip(tripId);
         requireOwner(trip, ownerEmail);
         TripMember member = loadMember(trip, memberId);
-        member.setRole(normalizeRole(role));
+        String newRole = normalizeRole(role);
+        boolean changed = !newRole.equals(effectiveRole(member.getRole()));
+        member.setRole(newRole);
         memberRepository.save(member);
         recount(trip);
+        if (changed) {
+            activityService.log(trip, trip.getUser(), TripActivityService.MEMBER_ROLE_CHANGED, "MEMBER",
+                    member.getUser().getId(), member.getUser().getFullName(), newRole);
+        }
         return toInfo(member);
     }
 
@@ -207,6 +222,8 @@ public class TripShareService {
         member.setStatus("REMOVED");
         memberRepository.save(member);
         recount(trip);
+        activityService.log(trip, trip.getUser(), TripActivityService.MEMBER_REMOVED, "MEMBER",
+                member.getUser().getId(), member.getUser().getFullName(), null);
     }
 
     private TripMember loadMember(Trip trip, Long memberId) {

@@ -20,4 +20,7 @@ public class TripSummaryResponse {
     private LocalDate endDate;
     private String visibility; // PUBLIC, FOLLOWERS, FRIENDS, PRIVATE
     private Integer memberCount;
+    private Integer placeCount;         // tổng số địa điểm trong lịch trình
+    private String coverImageUrl;       // ảnh bìa riêng (NULL = chưa chọn)
+    private String suggestedCoverUrl;   // ảnh gợi ý theo điểm đến khi chưa chọn ảnh bìa
 }

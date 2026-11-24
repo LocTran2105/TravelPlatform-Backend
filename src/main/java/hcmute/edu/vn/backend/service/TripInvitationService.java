@@ -60,6 +60,7 @@ public class TripInvitationService {
     private final TripRepository tripRepository;
     private final UserRepository userRepository;
     private final MailService mailService;
+    private final TripActivityService activityService;
     private final long expiryDays;
 
     public TripInvitationService(TripInvitationRepository invitationRepository,
@@ -67,12 +68,14 @@ public class TripInvitationService {
                                  TripRepository tripRepository,
                                  UserRepository userRepository,
                                  MailService mailService,
+                                 TripActivityService activityService,
                                  @Value("${app.invitation.expiry-days:7}") long expiryDays) {
         this.invitationRepository = invitationRepository;
         this.memberRepository = memberRepository;
         this.tripRepository = tripRepository;
         this.userRepository = userRepository;
         this.mailService = mailService;
+        this.activityService = activityService;
         this.expiryDays = expiryDays > 0 ? expiryDays : 7;
     }
 
@@ -147,6 +150,7 @@ public class TripInvitationService {
             inv.setLastSentAt(now);
             inv.setSendCount(1);
             invitationRepository.save(inv);
+            activityService.log(trip, inviter, TripActivityService.MEMBER_INVITED, "MEMBER", null, email, inviteRole);
 
             created.add(toInfo(inv, now));
             mails.add(toMail(inv, token));
@@ -274,6 +278,8 @@ public class TripInvitationService {
                 memberRepository.save(member);
             }
             recalculateMemberCount(trip);
+            activityService.log(trip, user, TripActivityService.MEMBER_JOINED, "MEMBER", user.getId(),
+                    user.getFullName(), inv.getRole());
         }
 
         inv.setStatus("ACCEPTED");
