@@ -51,4 +51,17 @@ public class TripDestinationController {
             return ResponseEntity.badRequest().body(e.getMessage());
         }
     }
+    // API: Xóa một địa điểm khỏi ngày trong lịch trình
+    @DeleteMapping("/destinations/{destinationId}")
+    public ResponseEntity<?> deleteDestination(@PathVariable Long destinationId, Principal principal) {
+        try {
+            accessService.requireEditByDestination(destinationId, principal.getName()); // người chỉ xem không được xóa
+            tripDestinationService.deleteDestination(destinationId, principal.getName());
+            return ResponseEntity.ok("Đã xóa địa điểm khỏi lịch trình!");
+        } catch (TripAccessException e) {
+            return ResponseEntity.status(e.getStatus()).body(e.getMessage());
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
 }

@@ -293,9 +293,9 @@ public class TripDestinationService {
         }
         tripDestinationRepository.delete(dest);
 
-        // Ghi lịch sử thao tác: bật dòng dưới nếu TripActivityService có hằng số cho thao tác xóa
-        // activityService.log(trip, userEmail, TripActivityService.DESTINATION_REMOVED,
-        //         "DESTINATION", destinationId, dest.getPlaceName(), "Day " + tripDay.getDayNumber());
+        // Ghi lịch sử thao tác (cùng giao dịch: xóa thất bại thì không có dòng log)
+        activityService.log(trip, userEmail, TripActivityService.DESTINATION_REMOVED,
+                "DESTINATION", destinationId, dest.getPlaceName(), "Day " + tripDay.getDayNumber());
     }
 
     private static String blankToNull(String s) {
