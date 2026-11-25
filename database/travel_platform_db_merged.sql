@@ -1312,4 +1312,4 @@ SELECT * FROM (
 ) AS seed
 WHERE NOT EXISTS (SELECT 1 FROM cover_images);
 
-UPDATE travel_platform_db.users SET role = 'ROLE_ADMIN' WHERE email = 'tranhuuloc05@gmail.com';
+-- UPDATE travel_platform_db.users SET role = 'ROLE_ADMIN' WHERE email = 'tranhuuloc05@gmail.com';
