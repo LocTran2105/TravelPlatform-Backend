@@ -8,6 +8,8 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -46,12 +48,21 @@ public class PartnerBusinessSpecialHour {
     @Column(name = "is_closed", nullable = false)
     private Boolean closed = false;
 
-    @Column(name = "note", columnDefinition = "TEXT")
+    /** Lý do (nghỉ lễ, sự kiện...). Cột DB là reason VARCHAR(255); tên field giữ là note để không sửa service. */
+    @Column(name = "reason", length = 255)
     private String note;
 
     @Column(name = "created_at", insertable = false, updatable = false)
     private LocalDateTime createdAt;
 
-    @Column(name = "updated_at", insertable = false, updatable = false)
-    private LocalDateTime updatedAt;
+    // Bảng partner_business_special_hours không có cột updated_at nên không ánh xạ.
+
+    @PrePersist
+    @PreUpdate
+    void normalizeReason() {
+        if (note != null) {
+            String trimmed = note.trim();
+            note = trimmed.isEmpty() ? null : (trimmed.length() > 255 ? trimmed.substring(0, 255) : trimmed);
+        }
+    }
 }
