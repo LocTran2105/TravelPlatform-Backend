@@ -1,6 +1,7 @@
 package hcmute.edu.vn.backend.service;
 
 import hcmute.edu.vn.backend.dto.DestinationRequest;
+import hcmute.edu.vn.backend.dto.ItineraryOrderRequest;
 import hcmute.edu.vn.backend.entity.Place;
 import hcmute.edu.vn.backend.entity.Trip;
 import hcmute.edu.vn.backend.entity.TripDay;
@@ -15,7 +16,14 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalTime;
 import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 import java.util.Objects;
 
 @Service
@@ -57,6 +65,12 @@ public class TripDestinationService {
 
             if (place.getName() == null || place.getName().isBlank()) {
                 throw new Exception("Địa điểm không có tên hợp lệ!");
+            }
+            // Place PARTNER chỉ được thêm khi Business đang công khai (đã duyệt, xuất bản, mở cửa).
+            // Chặn việc gửi placeId của địa điểm đối tác bị ẩn/từ chối/đóng cửa.
+            if ("PARTNER".equalsIgnoreCase(place.getProvider())
+                    && placeRepository.countPublicPartnerPlace(place.getId()) == 0) {
+                throw new Exception("Địa điểm đối tác này hiện không còn công khai nên không thể thêm vào lịch trình!");
             }
         } else if (request.getPlaceName() == null
                 || request.getPlaceName().isBlank()) {
@@ -329,6 +343,96 @@ public class TripDestinationService {
             return LocalTime.parse(value.toString().trim());
         } catch (DateTimeParseException e) {
             throw new Exception("Định dạng giờ không hợp lệ (Cần HH:mm)!");
+        }
+    }
+
+    /**
+     * Sắp xếp lại lịch trình sau khi kéo thả: đổi thứ tự trong một ngày và/hoặc chuyển địa điểm sang ngày khác.
+     * Mọi ngày và địa điểm phải thuộc CÙNG một chuyến đi mà người dùng có quyền chỉnh sửa.
+     * Địa điểm đang ở ngày được gửi nhưng không có trong danh sách (vd. vừa được người khác thêm)
+     * được giữ lại và xếp cuối ngày, không bị mất.
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void reorderItinerary(ItineraryOrderRequest request, String userEmail) throws Exception {
+        if (request == null || request.days() == null || request.days().isEmpty()) {
+            throw new Exception("Thiếu thứ tự lịch trình cần lưu!");
+        }
+        if (request.days().size() > 31) {
+            throw new Exception("Quá nhiều ngày trong một lần sắp xếp!");
+        }
+
+        // 1. Nạp các ngày và kiểm tra cùng chuyến đi + quyền chỉnh sửa.
+        Map<Long, TripDay> days = new HashMap<>();
+        Trip trip = null;
+        for (ItineraryOrderRequest.DayOrder order : request.days()) {
+            if (order == null || order.dayId() == null) throw new Exception("Thiếu ID ngày!");
+            TripDay day = tripDayRepository.findById(order.dayId())
+                    .orElseThrow(() -> new Exception("Không tìm thấy ngày trong lịch trình!"));
+            if (trip == null) {
+                trip = day.getTrip();
+                accessService.requireEdit(trip, userEmail);
+            } else if (!Objects.equals(trip.getId(), day.getTrip().getId())) {
+                throw new Exception("Các ngày không thuộc cùng một chuyến đi!");
+            }
+            days.put(day.getId(), day);
+        }
+
+        // 2. Gán ngày + thứ tự mới cho từng địa điểm được gửi lên.
+        Set<Long> seen = new HashSet<>();
+        List<String> movedLabels = new ArrayList<>();
+        TripDay lastTargetDay = null;
+        for (ItineraryOrderRequest.DayOrder order : request.days()) {
+            TripDay targetDay = days.get(order.dayId());
+            List<Long> ids = order.destinationIds() == null ? List.of() : order.destinationIds();
+            int index = 0;
+            for (Long destinationId : ids) {
+                if (destinationId == null || !seen.add(destinationId)) {
+                    throw new Exception("Danh sách địa điểm bị trùng hoặc không hợp lệ!");
+                }
+                TripDestination dest = tripDestinationRepository.findById(destinationId)
+                        .orElseThrow(() -> new Exception("Không tìm thấy địa điểm trong lịch trình!"));
+                TripDay currentDay = dest.getTripDay();
+                if (!Objects.equals(currentDay.getTrip().getId(), trip.getId())) {
+                    throw new Exception("Địa điểm không thuộc chuyến đi này!");
+                }
+                if (!Objects.equals(currentDay.getId(), targetDay.getId())) {
+                    if (currentDay.getDestinations() != null) currentDay.getDestinations().remove(dest);
+                    if (targetDay.getDestinations() != null) targetDay.getDestinations().add(dest);
+                    dest.setTripDay(targetDay);
+                    movedLabels.add(dest.getPlaceName());
+                    lastTargetDay = targetDay;
+                }
+                dest.setOrderIndex(index++);
+            }
+        }
+
+        // 3. Địa điểm còn lại trong các ngày được gửi nhưng không có trong danh sách -> xếp cuối, giữ thứ tự cũ.
+        for (ItineraryOrderRequest.DayOrder order : request.days()) {
+            TripDay day = days.get(order.dayId());
+            if (day.getDestinations() == null) continue;
+            int next = order.destinationIds() == null ? 0 : order.destinationIds().size();
+            List<TripDestination> leftovers = new ArrayList<>();
+            for (TripDestination dest : day.getDestinations()) {
+                if (!seen.contains(dest.getId())) leftovers.add(dest);
+            }
+            leftovers.sort(Comparator.comparing(TripDestination::getOrderIndex,
+                    Comparator.nullsLast(Comparator.naturalOrder())));
+            for (TripDestination dest : leftovers) dest.setOrderIndex(next++);
+        }
+
+        tripDestinationRepository.flush();
+
+        // 4. Lịch sử thao tác.
+        if (movedLabels.size() == 1 && lastTargetDay != null) {
+            activityService.log(trip, userEmail, TripActivityService.DESTINATION_MOVED,
+                    "DESTINATION", null, movedLabels.get(0), "Day " + lastTargetDay.getDayNumber());
+        } else if (!movedLabels.isEmpty()) {
+            activityService.logCoalesced(trip, userEmail, TripActivityService.ITINERARY_REORDERED,
+                    "TRIP", trip.getId(), null, movedLabels.size() + " địa điểm");
+        } else {
+            TripDay only = days.get(request.days().get(0).dayId());
+            activityService.logCoalesced(trip, userEmail, TripActivityService.ITINERARY_REORDERED,
+                    "DAY", only.getId(), null, "Day " + only.getDayNumber());
         }
     }
 }

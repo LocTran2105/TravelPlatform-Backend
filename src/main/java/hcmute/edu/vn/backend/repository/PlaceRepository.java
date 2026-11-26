@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -121,4 +122,81 @@ public interface PlaceRepository extends JpaRepository<Place, Long> {
     List<Place> findPublicPlacesByDestination(
             @Param("destination") String destination
     );
+
+    /**
+     * Tìm Place công khai theo tên/địa chỉ cho ô tìm kiếm của Trip.
+     * Collation utf8mb4 (_ci) của MySQL không phân biệt hoa thường và dấu: "lung chung" khớp "Lưng Chừng".
+     * PARTNER chỉ trả khi Business đã duyệt, công khai, đang mở; ưu tiên PARTNER, rồi cùng điểm đến của Trip.
+     */
+    @Query(value = """
+            SELECT p.*
+            FROM places p
+            LEFT JOIN partner_businesses b
+                ON b.id = p.partner_business_id
+            WHERE p.latitude IS NOT NULL
+              AND p.longitude IS NOT NULL
+              AND (
+                    p.name LIKE :pattern
+                    OR p.address LIKE :pattern
+                    OR p.name LIKE :firstSegment
+                    OR p.address LIKE :firstSegment
+              )
+              AND (
+                    UPPER(TRIM(p.provider)) = 'OSM'
+                    OR (
+                        UPPER(TRIM(p.provider)) = 'PARTNER'
+                        AND b.id IS NOT NULL
+                        AND b.verification_status IN ('APPROVED', 'VERIFIED')
+                        AND b.publication_status = 'PUBLISHED'
+                        AND b.operating_status = 'OPEN'
+                        AND b.deleted_at IS NULL
+                    )
+              )
+            ORDER BY
+                CASE WHEN UPPER(TRIM(p.provider)) = 'PARTNER' THEN 0 ELSE 1 END,
+                CASE WHEN :destination <> '' AND p.destination LIKE CONCAT('%', :destination, '%') THEN 0 ELSE 1 END,
+                CASE WHEN p.name LIKE :pattern THEN 0 ELSE 1 END,
+                p.id DESC
+            LIMIT :limit
+            """, nativeQuery = true)
+    List<Place> searchPublicPlaces(
+            @Param("pattern") String pattern,
+            @Param("firstSegment") String firstSegment,
+            @Param("destination") String destination,
+            @Param("limit") int limit
+    );
+
+    /** POI OSM đã lưu, còn mới (fetched_at >= :since), đúng điểm đến + loại, có tọa độ. */
+    @Query(value = """
+            SELECT p.*
+            FROM places p
+            WHERE UPPER(TRIM(p.provider)) = 'OSM'
+              AND UPPER(TRIM(p.destination)) = UPPER(TRIM(:destination))
+              AND UPPER(TRIM(p.place_type)) = UPPER(TRIM(:placeType))
+              AND p.latitude IS NOT NULL
+              AND p.longitude IS NOT NULL
+              AND p.fetched_at >= :since
+            ORDER BY p.fetched_at DESC, p.id DESC
+            LIMIT :limit
+            """, nativeQuery = true)
+    List<Place> findFreshOsmPlaces(
+            @Param("destination") String destination,
+            @Param("placeType") String placeType,
+            @Param("since") LocalDateTime since,
+            @Param("limit") int limit
+    );
+
+    /** 1 nếu Place là PARTNER của Business đang công khai (đã duyệt, đã xuất bản, đang mở, chưa xóa). */
+    @Query(value = """
+            SELECT COUNT(*)
+            FROM places p
+            JOIN partner_businesses b ON b.id = p.partner_business_id
+            WHERE p.id = :placeId
+              AND UPPER(TRIM(p.provider)) = 'PARTNER'
+              AND b.verification_status IN ('APPROVED', 'VERIFIED')
+              AND b.publication_status = 'PUBLISHED'
+              AND b.operating_status = 'OPEN'
+              AND b.deleted_at IS NULL
+            """, nativeQuery = true)
+    long countPublicPartnerPlace(@Param("placeId") Long placeId);
 }

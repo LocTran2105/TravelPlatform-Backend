@@ -23,6 +23,14 @@ public class TripContextDTO {
     private BigDecimal totalBudget;
     private List<TripDaySummaryDTO> tripDays;
 
+    /**
+     * Điểm neo để ưu tiên gợi ý ở gần: địa điểm ĐẦU TIÊN của lịch trình có tọa độ
+     * (ngày nhỏ nhất, thứ tự nhỏ nhất). Null nếu lịch trình chưa có địa điểm nào trên bản đồ.
+     */
+    private String anchorName;
+    private Double anchorLatitude;
+    private Double anchorLongitude;
+
     @Data
     @Builder
     @NoArgsConstructor
@@ -32,5 +40,17 @@ public class TripContextDTO {
         private Integer dayNumber;
         private LocalDate dayDate;
         private List<String> existingPlaces;
+        /** Địa điểm có tọa độ của ngày, theo thứ tự lịch trình (dùng để gợi ý "gần X", "ngày N"). */
+        private List<PlacePoint> placePoints;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class PlacePoint {
+        private String name;
+        private Double latitude;
+        private Double longitude;
     }
 }

@@ -10,6 +10,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -28,6 +29,15 @@ public interface PartnerApplicationRepository
     boolean existsByUser_IdAndVerificationStatus(
             Long userId,
             String verificationStatus
+    );
+
+    /**
+     * Mã số thuế đã được tài khoản KHÁC dùng cho đơn đang chờ hoặc đã duyệt.
+     */
+    boolean existsByTaxCodeAndVerificationStatusInAndUser_IdNot(
+            String taxCode,
+            Collection<String> verificationStatuses,
+            Long userId
     );
 
     List<PartnerApplication>

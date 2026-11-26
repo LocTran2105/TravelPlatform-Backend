@@ -54,6 +54,10 @@ public class OsmPlaceDiscoveryService {
     private static final String DEFAULT_PHOTON_URL = "https://photon.komoot.io/api/";
     private static final String DEFAULT_OVERPASS_URL = "https://overpass-api.de/api/interpreter";
     private static final int MAX_RADIUS_METERS = 15_000;
+    /** Đủ ngần này POI còn mới trong DB thì không cần gọi Overpass. */
+    private static final int MIN_FRESH_DB_RESULTS = 8;
+    /** Dấu hiệu "nổi tiếng" lưu trong categories (POI có wikidata/wikipedia trên OSM). */
+    public static final String NOTABLE_CATEGORY = "notable=wiki";
     private static final int MAX_RESULTS = 20;
     private static final int MAX_ELEMENTS_TO_PROCESS = 500;
     private static final int MAX_NAMED_CANDIDATES = 8;
@@ -88,6 +92,36 @@ public class OsmPlaceDiscoveryService {
     private long overpassCooldownSeconds;
 
     private volatile Instant overpassCooldownUntil = Instant.EPOCH;
+
+    /**
+     * POI OSM đã lưu trong DB còn "tươi" trong khoảng này thì dùng luôn, không gọi Overpass
+     * (dữ liệu OSM thay đổi chậm; sau khi khởi động lại backend vẫn trả kết quả ngay).
+     */
+    @Value("${osm.db.fresh-hours:168}")
+    private long dbFreshHours;
+
+    /** Thời gian chờ mỗi máy chủ Overpass cho luồng gợi ý của Traveler (Admin dùng thời gian dài hơn). */
+    @Value("${osm.overpass.read-timeout-ms:8000}")
+    private int overpassReadTimeoutMs;
+
+    /** Máy chủ đầu chưa trả lời sau khoảng này thì gửi song song sang máy chủ kế tiếp ("hedged request"). */
+    @Value("${osm.overpass.hedge-delay-ms:2500}")
+    private long overpassHedgeDelayMs;
+
+    /** Tổng thời gian tối đa chờ Overpass cho một lượt gợi ý. */
+    @Value("${osm.overpass.total-timeout-ms:10000}")
+    private long overpassTotalTimeoutMs;
+
+    private static final int ADMIN_READ_TIMEOUT_MS = 15_000;
+    private static final long ADMIN_TOTAL_TIMEOUT_MS = 20_000;
+
+    /** Luồng riêng cho các lời gọi Overpass song song (daemon để không giữ JVM khi tắt). */
+    private static final java.util.concurrent.ExecutorService OVERPASS_POOL =
+            java.util.concurrent.Executors.newFixedThreadPool(4, runnable -> {
+                Thread thread = new Thread(runnable, "overpass-client");
+                thread.setDaemon(true);
+                return thread;
+            });
 
     private final ConcurrentMap<String, CachedPlaces> discoveryCache = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, CachedCoordinates> geocodeCache = new ConcurrentHashMap<>();
@@ -319,6 +353,18 @@ public class OsmPlaceDiscoveryService {
             return getFallbackFromDb(normalizedDestination, normalizedCategory, safeLimit);
         }
 
+        // DB trước: đã có đủ POI OSM lấy về gần đây thì trả ngay (vài ms) thay vì chờ Overpass (có thể 10–30s).
+        List<Place> fresh = placeRepository.findFreshOsmPlaces(
+                normalizedDestination, normalizedCategory,
+                LocalDateTime.now().minusHours(Math.max(1L, dbFreshHours)), safeLimit);
+        if (fresh != null && fresh.size() >= Math.min(safeLimit, MIN_FRESH_DB_RESULTS)) {
+            log.info("Dùng {} POI OSM còn mới trong DB cho '{}'/{}; bỏ qua Overpass.",
+                    fresh.size(), normalizedDestination, normalizedCategory);
+            long ttl = Math.max(300L, cacheTtlSeconds);
+            discoveryCache.put(cacheKey, new CachedPlaces(List.copyOf(fresh), Instant.now().plusSeconds(ttl)));
+            return fresh;
+        }
+
         if (Instant.now().isBefore(overpassCooldownUntil)) {
             log.info("Overpass đang trong thời gian nghỉ tới {} sau lỗi liên tiếp; dùng DB fallback cho '{}'/{}.",
                     overpassCooldownUntil, normalizedDestination, normalizedCategory);
@@ -328,7 +374,8 @@ public class OsmPlaceDiscoveryService {
         String query = buildOverpassQuery(normalizedCategory,
                 center[0], center[1], safeRadius);
 
-        OverpassFetch fetch = fetchOverpass(query, normalizedDestination, normalizedCategory);
+        OverpassFetch fetch = fetchOverpass(query, normalizedDestination, normalizedCategory,
+                overpassReadTimeoutMs, overpassTotalTimeoutMs);
         if (fetch.allEndpointsFailed()) {
             overpassCooldownUntil = Instant.now().plusSeconds(Math.max(15L, overpassCooldownSeconds));
             log.warn("Mọi endpoint Overpass đều lỗi; tạm dùng DB fallback tới {}.", overpassCooldownUntil);
@@ -431,7 +478,17 @@ public class OsmPlaceDiscoveryService {
 
         String query = buildOverpassQuery(
                 category, latitude.doubleValue(), longitude.doubleValue(), safeRadius);
-        List<Map> elements = fetchOverpassElements(query, safeDestination, "ADMIN_" + category);
+        OverpassFetch fetch = fetchOverpass(query, safeDestination, "ADMIN_" + category,
+                ADMIN_READ_TIMEOUT_MS, ADMIN_TOTAL_TIMEOUT_MS);
+        if (fetch.allEndpointsFailed()) {
+            // Khác với "không có POI": mọi máy chủ Overpass đều lỗi/quá tải nên CHƯA kiểm tra được.
+            // Báo rõ cho Admin thay vì trả danh sách rỗng (dễ hiểu nhầm là OSM không có địa điểm).
+            throw new IllegalStateException(
+                    "Máy chủ OpenStreetMap (Overpass) đang quá tải hoặc không phản hồi nên chưa kiểm tra được POI OSM"
+                            + " quanh vị trí này. Bấm \"Tìm lại POI OSM\" sau ít phút, hoặc dùng \"Tạo Place PARTNER\""
+                            + " nếu Admin đã xác minh được vị trí.");
+        }
+        List<Map> elements = fetch.elements();
         if (elements.isEmpty()) return Collections.emptyList();
 
         List<Place> candidates = new ArrayList<>();
@@ -542,10 +599,19 @@ public class OsmPlaceDiscoveryService {
         }
 
         // Phase 2: Photon did not find a match; try Overpass as a secondary source.
+        // Overpass đang bị đánh dấu quá tải thì bỏ qua luôn (tránh chờ thêm ~10s mỗi tin nhắn).
+        if (Instant.now().isBefore(overpassCooldownUntil)) {
+            log.info("Overpass đang nghỉ tới {}; chỉ đối chiếu candidate với DB.", overpassCooldownUntil);
+            return matchNamedPlacesFromDb(normalizedDestination, normalizedCategory, safeNames, safeLimit);
+        }
         String query = buildNamedPlacesQuery(normalizedCategory, safeNames,
                 center[0], center[1], safeRadius);
-        List<Map> elements = fetchOverpassElements(
-                query, normalizedDestination, normalizedCategory + "_NAMED");
+        OverpassFetch namedFetch = fetchOverpass(query, normalizedDestination, normalizedCategory + "_NAMED",
+                overpassReadTimeoutMs, overpassTotalTimeoutMs);
+        if (namedFetch.allEndpointsFailed()) {
+            overpassCooldownUntil = Instant.now().plusSeconds(Math.max(15L, overpassCooldownSeconds));
+        }
+        List<Map> elements = namedFetch.elements();
 
         if (elements.isEmpty()) {
             log.info("Photon/Overpass chưa xác minh được candidate: destination='{}', category={}, candidates={}",
@@ -662,7 +728,7 @@ public class OsmPlaceDiscoveryService {
                     }
 
                     String osmName = Objects.toString(properties.get("name"), "").trim();
-                    if (!normalizePlaceName(candidate).equals(normalizePlaceName(osmName))) {
+                    if (!namesMatch(candidate, osmName)) {
                         continue;
                     }
                     if (!matchesPhotonCategory(properties, category)) {
@@ -775,15 +841,23 @@ public class OsmPlaceDiscoveryService {
             case "ACCOMMODATION" -> "tourism".equals(key)
                     && Set.of("hotel", "guest_house", "hostel", "chalet", "resort", "motel", "apartment")
                     .contains(value);
+            // Điểm tham quan ở Việt Nam thường được gắn thẻ đa dạng trên OSM: hồ (natural=water), chợ
+            // (amenity=marketplace), chùa/nhà thờ (amenity=place_of_worship), ga cổ (railway=station)...
+            // Tên đã do người dùng/AI nêu đích danh nên chấp nhận các nhóm này, vẫn loại chỗ ở và hàng quán.
             default -> ("tourism".equals(key)
-                    && Set.of("attraction", "viewpoint", "museum", "theme_park", "gallery", "zoo",
-                    "aquarium", "artwork").contains(value))
+                    && !Set.of("hotel", "guest_house", "hostel", "motel", "apartment", "chalet",
+                    "camp_site", "caravan_site", "information").contains(value))
                     || "attraction".equals(key)
                     || "historic".equals(key)
-                    || ("leisure".equals(key)
-                    && Set.of("park", "garden", "nature_reserve").contains(value))
-                    || ("natural".equals(key)
-                    && Set.of("waterfall", "peak", "cave", "beach", "hot_spring").contains(value));
+                    || "leisure".equals(key)
+                    || "natural".equals(key)
+                    || ("waterway".equals(key) && "waterfall".equals(value))
+                    || ("amenity".equals(key) && Set.of("place_of_worship", "marketplace", "theatre",
+                    "arts_centre", "fountain").contains(value))
+                    || ("building".equals(key) && Set.of("church", "cathedral", "temple", "pagoda",
+                    "chapel", "monastery").contains(value))
+                    || ("railway".equals(key) && "station".equals(value))
+                    || ("place".equals(key) && "square".equals(value));
         };
     }
 
@@ -864,7 +938,8 @@ public class OsmPlaceDiscoveryService {
             }
         }
 
-        return "[out:json][timeout:12];\n(\n" + String.join("\n", selectors)
+        // Server timeout khớp thời gian chờ phía client: quá tải thì máy chủ trả remark sớm thay vì treo.
+        return "[out:json][timeout:8];\n(\n" + String.join("\n", selectors)
                 + "\n);\nout center qt;";
     }
 
@@ -896,6 +971,21 @@ public class OsmPlaceDiscoveryService {
                 .anyMatch(candidate -> normalizePlaceName(candidate).equals(normalizedOsm));
     }
 
+    /**
+     * Tên trùng khớp sau khi bỏ dấu, hoặc tên này chứa trọn tên kia (vd. "Thiền viện Trúc Lâm" và
+     * "Thiền viện Trúc Lâm Phượng Hoàng"). Phần ngắn hơn phải đủ dài để tránh khớp nhầm tên chung chung.
+     */
+    private boolean namesMatch(String candidate, String osmName) {
+        String a = normalizePlaceName(candidate);
+        String b = normalizePlaceName(osmName);
+        if (a.isEmpty() || b.isEmpty()) return false;
+        if (a.equals(b)) return true;
+        String shorter = a.length() <= b.length() ? a : b;
+        String longer = a.length() <= b.length() ? b : a;
+        return shorter.length() >= 8 && shorter.split(" ").length >= 2
+                && (" " + longer + " ").contains(" " + shorter + " ");
+    }
+
     private String normalizePlaceName(String value) {
         if (value == null) {
             return "";
@@ -924,50 +1014,102 @@ public class OsmPlaceDiscoveryService {
     }
 
     private List<Map> fetchOverpassElements(String query, String destination, String category) {
-        return fetchOverpass(query, destination, category).elements();
+        return fetchOverpass(query, destination, category, overpassReadTimeoutMs, overpassTotalTimeoutMs).elements();
     }
 
     /**
-     * allEndpointsFailed = true chỉ khi mọi endpoint đều lỗi (HTTP lỗi, timeout, remark, body rỗng).
-     * Một endpoint trả về 0 element hợp lệ nghĩa là khu vực không có POI, không phải sự cố.
+     * Gọi Overpass kiểu "hedged": gửi tới máy chủ đầu; sau {@code overpassHedgeDelayMs} chưa có kết quả
+     * (hoặc máy chủ đầu lỗi) thì gửi tiếp tới máy chủ kế tiếp, lấy kết quả có dữ liệu ĐẦU TIÊN.
+     * Tổng thời gian chờ không quá {@code totalTimeoutMs} thay vì cộng dồn timeout từng máy chủ (trước đây ~30s).
+     * allEndpointsFailed = true chỉ khi không máy chủ nào trả lời hợp lệ; trả lời 0 element nghĩa là khu vực
+     * không có POI, không phải sự cố.
      */
-    private OverpassFetch fetchOverpass(String query, String destination, String category) {
+    private OverpassFetch fetchOverpass(String query, String destination, String category,
+                                        int readTimeoutMs, long totalTimeoutMs) {
+        List<String> endpoints = resolveOverpassUrls();
+        java.util.concurrent.CompletionService<EndpointResult> completion =
+                new java.util.concurrent.ExecutorCompletionService<>(OVERPASS_POOL);
+        List<java.util.concurrent.Future<EndpointResult>> futures = new ArrayList<>();
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(totalTimeoutMs);
+        int started = 0;
+        int finished = 0;
         boolean anyEndpointAnswered = false;
-        for (String endpoint : resolveOverpassUrls()) {
+
+        futures.add(completion.submit(callOverpassEndpoint(endpoints.get(started++), query, destination, category, readTimeoutMs)));
+        try {
+            while (finished < started) {
+                long remainingMs = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime());
+                if (remainingMs <= 0) break;
+                long waitMs = started < endpoints.size() ? Math.min(overpassHedgeDelayMs, remainingMs) : remainingMs;
+
+                java.util.concurrent.Future<EndpointResult> done =
+                        completion.poll(waitMs, java.util.concurrent.TimeUnit.MILLISECONDS);
+                if (done == null) {
+                    // Máy chủ hiện tại chậm: gửi song song sang máy chủ kế tiếp (nếu còn).
+                    if (started < endpoints.size()) {
+                        futures.add(completion.submit(callOverpassEndpoint(
+                                endpoints.get(started++), query, destination, category, readTimeoutMs)));
+                    }
+                    continue;
+                }
+                finished++;
+                EndpointResult result = done.get();
+                if (!result.elements().isEmpty()) {
+                    return new OverpassFetch(result.elements(), false);
+                }
+                anyEndpointAnswered |= result.answered();
+                // Máy chủ này lỗi/rỗng: thử ngay máy chủ kế tiếp thay vì chờ hết thời gian hedge.
+                if (started < endpoints.size()) {
+                    futures.add(completion.submit(callOverpassEndpoint(
+                            endpoints.get(started++), query, destination, category, readTimeoutMs)));
+                }
+            }
+            if (finished < started) {
+                log.warn("Overpass quá {} ms cho '{}'/{}; dừng chờ.", totalTimeoutMs, destination, category);
+            }
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+        } catch (java.util.concurrent.ExecutionException ex) {
+            log.warn("Lỗi khi chờ Overpass cho '{}'/{}: {}", destination, category, safeMessage(ex));
+        } finally {
+            // Không chờ các lời gọi còn lại; chúng tự kết thúc theo read timeout.
+            futures.forEach(future -> future.cancel(true));
+        }
+        return new OverpassFetch(Collections.emptyList(), !anyEndpointAnswered);
+    }
+
+    private java.util.concurrent.Callable<EndpointResult> callOverpassEndpoint(
+            String endpoint, String query, String destination, String category, int readTimeoutMs) {
+        return () -> {
             try {
                 HttpHeaders headers = buildHeaders();
                 headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
                 headers.setAccept(List.of(MediaType.APPLICATION_JSON));
                 String formBody = "data=" + URLEncoder.encode(query, StandardCharsets.UTF_8);
 
-                // Keep each public endpoint attempt bounded, then fail over to the next endpoint.
-                ResponseEntity<Map> response = createHttpClient(15_000).postForEntity(
-                        endpoint,
-                        new HttpEntity<>(formBody, headers),
-                        Map.class
-                );
+                ResponseEntity<Map> response = createHttpClient(readTimeoutMs).postForEntity(
+                        endpoint, new HttpEntity<>(formBody, headers), Map.class);
                 Map body = response.getBody();
                 if (body == null) {
                     log.warn("Overpass endpoint {} trả response body rỗng", endpoint);
-                    continue;
+                    return new EndpointResult(Collections.emptyList(), false);
                 }
 
                 Object remark = body.get("remark");
                 if (remark != null && hasText(String.valueOf(remark))) {
+                    // Remark thường là query bị timeout phía server: không coi là thành công.
                     log.warn("Overpass remark tại {} cho '{}': {}", endpoint, destination, remark);
-                    // An Overpass remark often means the query timed out; do not treat it as success.
-                    continue;
+                    return new EndpointResult(Collections.emptyList(), false);
                 }
 
                 Object rawElements = body.get("elements");
                 if (rawElements instanceof List<?> list && !list.isEmpty()) {
                     log.info("OSM discovery thành công: destination='{}', category='{}', endpoint={}, rawElements={}",
                             destination, category, endpoint, list.size());
-                    return new OverpassFetch((List<Map>) list, false);
+                    return new EndpointResult((List<Map>) list, true);
                 }
-
-                anyEndpointAnswered = true;
                 log.info("Overpass endpoint {} không có elements cho '{}'/{}", endpoint, destination, category);
+                return new EndpointResult(Collections.emptyList(), true);
             } catch (HttpStatusCodeException ex) {
                 log.warn("Overpass endpoint {} trả HTTP {} cho '{}'/{}: {}",
                         endpoint, ex.getStatusCode().value(), destination, category, safeMessage(ex));
@@ -975,9 +1117,11 @@ public class OsmPlaceDiscoveryService {
                 log.warn("Gọi Overpass endpoint {} thất bại cho '{}'/{}: {}",
                         endpoint, destination, category, safeMessage(ex));
             }
-        }
-        return new OverpassFetch(Collections.emptyList(), !anyEndpointAnswered);
+            return new EndpointResult(Collections.emptyList(), false);
+        };
     }
+
+    private record EndpointResult(List<Map> elements, boolean answered) { }
 
     private record OverpassFetch(List<Map> elements, boolean allEndpointsFailed) { }
 
@@ -1232,6 +1376,11 @@ public class OsmPlaceDiscoveryService {
             if (value != null && hasText(String.valueOf(value))) {
                 categories.add(key + "=" + value);
             }
+        }
+        // Địa điểm có bài Wikipedia/Wikidata thường là nơi nổi tiếng: dùng làm tín hiệu "độ nổi tiếng" khi xếp hạng.
+        if (hasText(String.valueOf(tags.getOrDefault("wikidata", "")))
+                || hasText(String.valueOf(tags.getOrDefault("wikipedia", "")))) {
+            categories.add(NOTABLE_CATEGORY);
         }
         return categories;
     }

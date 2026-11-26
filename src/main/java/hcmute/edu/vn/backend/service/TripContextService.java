@@ -21,6 +21,19 @@ import java.util.Objects;
 public class TripContextService {
 
     private final TripRepository tripRepository;
+    private final TripAccessService tripAccessService;
+
+    /**
+     * Dùng cho trợ lý AI: chủ chuyến đi hoặc tripmate (kể cả chỉ xem) đều dùng được,
+     * kể cả khi chuyến đi ở chế độ riêng tư. Người ngoài bị từ chối (TripAccessException 403).
+     */
+    @Transactional(readOnly = true)
+    public TripContextDTO loadContextForMember(Long tripId, String email) {
+        if (tripId == null || email == null) {
+            throw new IllegalArgumentException("Thiếu thông tin chuyến đi hoặc người dùng.");
+        }
+        return toContext(tripAccessService.requireMember(tripId, email));
+    }
 
     @Transactional(readOnly = true)
     public TripContextDTO loadAuthorizedContext(Long tripId, Long currentUserId) {
@@ -37,8 +50,13 @@ public class TripContextService {
         if (!isOwner && !isPublic) {
             throw new AccessDeniedException("Bạn không có quyền truy cập chuyến đi này.");
         }
+        return toContext(trip);
+    }
+
+    private TripContextDTO toContext(Trip trip) {
 
         List<TripContextDTO.TripDaySummaryDTO> daySummaries = new ArrayList<>();
+        TripDestination anchor = null;
         if (trip.getTripDays() != null) {
             List<TripDay> sortedDays = new ArrayList<>(trip.getTripDays());
             sortedDays.sort(Comparator.comparing(
@@ -47,8 +65,22 @@ public class TripContextService {
 
             for (TripDay day : sortedDays) {
                 List<String> existingPlaces = new ArrayList<>();
+                List<TripContextDTO.PlacePoint> placePoints = new ArrayList<>();
                 if (day.getDestinations() != null) {
-                    for (TripDestination destination : day.getDestinations()) {
+                    List<TripDestination> ordered = new ArrayList<>(day.getDestinations());
+                    ordered.sort(Comparator.comparing(
+                            TripDestination::getOrderIndex,
+                            Comparator.nullsLast(Comparator.naturalOrder())));
+                    for (TripDestination destination : ordered) {
+                        if (destination != null
+                                && destination.getLatitude() != null && destination.getLongitude() != null) {
+                            if (anchor == null) anchor = destination;
+                            placePoints.add(TripContextDTO.PlacePoint.builder()
+                                    .name(destination.getPlaceName())
+                                    .latitude(destination.getLatitude().doubleValue())
+                                    .longitude(destination.getLongitude().doubleValue())
+                                    .build());
+                        }
                         if (destination != null && destination.getPlaceName() != null
                                 && !destination.getPlaceName().isBlank()) {
                             existingPlaces.add(destination.getPlaceName());
@@ -61,6 +93,7 @@ public class TripContextService {
                         .dayNumber(day.getDayNumber())
                         .dayDate(day.getDayDate())
                         .existingPlaces(existingPlaces)
+                        .placePoints(placePoints)
                         .build());
             }
         }
@@ -74,6 +107,9 @@ public class TripContextService {
                 .memberCount(trip.getMemberCount())
                 .totalBudget(trip.getTotalBudget())
                 .tripDays(daySummaries)
+                .anchorName(anchor != null ? anchor.getPlaceName() : null)
+                .anchorLatitude(anchor != null ? anchor.getLatitude().doubleValue() : null)
+                .anchorLongitude(anchor != null ? anchor.getLongitude().doubleValue() : null)
                 .build();
     }
 }

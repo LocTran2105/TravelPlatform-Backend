@@ -1,6 +1,7 @@
 package hcmute.edu.vn.backend.controller;
 
 import hcmute.edu.vn.backend.dto.DestinationRequest;
+import hcmute.edu.vn.backend.dto.ItineraryOrderRequest;
 import hcmute.edu.vn.backend.service.TripAccessException;
 import hcmute.edu.vn.backend.service.TripAccessService;
 import hcmute.edu.vn.backend.service.TripDestinationService;
@@ -51,6 +52,19 @@ public class TripDestinationController {
             return ResponseEntity.badRequest().body(e.getMessage());
         }
     }
+    // API: Lưu thứ tự lịch trình sau khi kéo thả (trong ngày hoặc sang ngày khác)
+    @PutMapping("/order")
+    public ResponseEntity<?> reorderItinerary(@RequestBody ItineraryOrderRequest request, Principal principal) {
+        try {
+            tripDestinationService.reorderItinerary(request, principal.getName()); // kiểm quyền chỉnh sửa bên trong
+            return ResponseEntity.ok("Đã lưu thứ tự lịch trình!");
+        } catch (TripAccessException e) {
+            return ResponseEntity.status(e.getStatus()).body(e.getMessage());
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
+
     // API: Xóa một địa điểm khỏi ngày trong lịch trình
     @DeleteMapping("/destinations/{destinationId}")
     public ResponseEntity<?> deleteDestination(@PathVariable Long destinationId, Principal principal) {

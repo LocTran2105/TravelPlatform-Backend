@@ -47,6 +47,8 @@ public class TripActivityService {
     public static final String DESTINATION_VISITED = "DESTINATION_VISITED";
     public static final String DESTINATION_UNVISITED = "DESTINATION_UNVISITED";
     public static final String DESTINATION_REMOVED = "DESTINATION_REMOVED";
+    public static final String DESTINATION_MOVED = "DESTINATION_MOVED";
+    public static final String ITINERARY_REORDERED = "ITINERARY_REORDERED";
     public static final String EXPENSE_ADDED = "EXPENSE_ADDED";
     public static final String EXPENSE_DELETED = "EXPENSE_DELETED";
     public static final String BUDGET_CHANGED = "BUDGET_CHANGED";

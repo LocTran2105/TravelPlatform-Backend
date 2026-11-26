@@ -32,4 +32,22 @@ public class PlaceDiscoveryDTO {
     private String matchReason;
     private String sourceUrl;
     private String attribution;      // "© OpenStreetMap contributors"
+
+    /**
+     * Độ tin cậy do BACKEND gắn (AI không được tự đặt):
+     * VERIFIED     - Place PARTNER của Business đã được Admin xác minh, đang công khai. Kéo thả được.
+     * MAP_DATA     - POI có thật trên OpenStreetMap, đã lưu trong DB và có tọa độ. Kéo thả được.
+     * AI_REFERENCE - AI gợi ý nhưng chưa đối chiếu được trên bản đồ: không có placeId/tọa độ, chỉ để tham khảo.
+     */
+    private String trustLevel;
+    private String trustLabel;
+    /** true khi địa điểm do AI đề xuất tên rồi backend tìm thấy trên bản đồ. */
+    private Boolean aiSuggested;
+    /** Nguồn của rating: PROVIDER (dữ liệu nguồn) hoặc COMMUNITY (đánh giá của người dùng trong hệ thống). */
+    private String ratingSource;
+    /** Khoảng cách tới địa điểm đầu tiên của lịch trình (điểm neo) và tên điểm neo, để hiển thị "cách ... km". */
+    private Double distanceFromAnchorMeters;
+    private String anchorName;
+    /** true nếu OSM có Wikipedia/Wikidata cho địa điểm này (tín hiệu "nổi tiếng"). */
+    private Boolean notable;
 }

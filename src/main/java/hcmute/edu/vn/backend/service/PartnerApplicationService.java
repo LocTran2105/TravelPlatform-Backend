@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.regex.Pattern;
 
 @Service
 @RequiredArgsConstructor
@@ -25,6 +26,24 @@ public class PartnerApplicationService {
     private final UserRepository userRepository;
 
     private final PartnerAuditService auditService;
+
+    /**
+     * Mã số thuế: 10 số (doanh nghiệp/hộ kinh doanh), 10 số + "-" + 3 số (chi nhánh, đơn vị phụ thuộc)
+     * hoặc 12 số (mã định danh cá nhân dùng làm mã số thuế cho cá nhân/hộ kinh doanh).
+     * Chỉ kiểm tra ĐỊNH DẠNG; mã có thật hay không do Admin tra cứu khi duyệt.
+     */
+    private static final Pattern TAX_CODE_PATTERN =
+            Pattern.compile("^(\\d{10}(-\\d{3})?|\\d{12})$");
+
+    /** Số điện thoại Việt Nam: 0xxxxxxxxx hoặc +84xxxxxxxxx (9–10 số sau đầu số). */
+    private static final Pattern PHONE_PATTERN =
+            Pattern.compile("^(0|\\+84)\\d{9,10}$");
+
+    private static final Pattern EMAIL_PATTERN =
+            Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
+
+    private static final List<String> ACTIVE_STATUSES =
+            List.of("PENDING", "APPROVED");
 
     /**
      * Người dùng gửi đơn đăng ký Partner.
@@ -74,6 +93,20 @@ public class PartnerApplicationService {
             );
         }
 
+        // Một mã số thuế chỉ gắn với một tài khoản đối tác.
+        if (applicationRepository
+                .existsByTaxCodeAndVerificationStatusInAndUser_IdNot(
+                        normalizeTaxCode(request.getTaxCode()),
+                        ACTIVE_STATUSES,
+                        user.getId()
+                )) {
+
+            throw new IllegalStateException(
+                    "Mã số thuế này đã được đăng ký bởi một tài khoản khác."
+                            + " Nếu đây là đơn vị của bạn, vui lòng liên hệ quản trị viên."
+            );
+        }
+
         PartnerApplication application =
                 new PartnerApplication();
 
@@ -85,7 +118,7 @@ public class PartnerApplicationService {
 
         application.setLegalName(trim(request.getLegalName()));
 
-        application.setTaxCode(trim(request.getTaxCode()));
+        application.setTaxCode(normalizeTaxCode(request.getTaxCode()));
 
         application.setContactPerson(
                 trim(request.getContactPerson())
@@ -96,7 +129,7 @@ public class PartnerApplicationService {
         );
 
         application.setContactPhone(
-                trim(request.getContactPhone())
+                normalizePhone(request.getContactPhone())
         );
 
         application.setBusinessAddress(
@@ -147,25 +180,75 @@ public class PartnerApplicationService {
 
     /**
      * Kiểm tra dữ liệu đăng ký.
+     * Đối tác phải là hộ kinh doanh / doanh nghiệp có mã số thuế, nên các thông tin pháp lý là bắt buộc.
      */
     private void validateRequest(
             PartnerApplicationRequest request
     ) {
 
-        if (request == null
-                || request.getDisplayName() == null
-                || request.getDisplayName().isBlank()) {
-
+        if (request == null) {
             throw new IllegalArgumentException(
-                    "Tên đối tác không được để trống."
+                    "Thiếu thông tin đăng ký."
             );
         }
 
-        if (request.getDisplayName().trim().length() > 255) {
+        requireText(request.getDisplayName(), "Tên đơn vị / tên hiển thị", 255);
+        requireText(request.getLegalName(), "Tên pháp lý", 255);
+        requireText(request.getTaxCode(), "Mã số thuế", 50);
+        requireText(request.getContactPerson(), "Người liên hệ", 150);
+        requireText(request.getContactPhone(), "Số điện thoại", 20);
+        requireText(request.getBusinessAddress(), "Địa chỉ đơn vị", 500);
+
+        if (!TAX_CODE_PATTERN.matcher(normalizeTaxCode(request.getTaxCode())).matches()) {
             throw new IllegalArgumentException(
-                    "Tên đối tác không được vượt quá 255 ký tự."
+                    "Mã số thuế không đúng định dạng"
+                            + " (10 số, 10 số kèm -3 số của chi nhánh, hoặc 12 số)."
             );
         }
+
+        if (!PHONE_PATTERN.matcher(normalizePhone(request.getContactPhone())).matches()) {
+            throw new IllegalArgumentException(
+                    "Số điện thoại không hợp lệ."
+            );
+        }
+
+        String email = trim(request.getContactEmail());
+        if (email != null
+                && (email.length() > 255 || !EMAIL_PATTERN.matcher(email).matches())) {
+            throw new IllegalArgumentException(
+                    "Email liên hệ không hợp lệ."
+            );
+        }
+
+        String description = trim(request.getDescription());
+        if (description != null && description.length() > 2000) {
+            throw new IllegalArgumentException(
+                    "Mô tả không được vượt quá 2000 ký tự."
+            );
+        }
+    }
+
+    private void requireText(String value, String label, int maxLength) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(
+                    label + " không được để trống."
+            );
+        }
+        if (value.trim().length() > maxLength) {
+            throw new IllegalArgumentException(
+                    label + " không được vượt quá " + maxLength + " ký tự."
+            );
+        }
+    }
+
+    /** Bỏ khoảng trắng và dấu chấm người dùng hay gõ kèm: "0312 345 678" -> "0312345678". */
+    private String normalizeTaxCode(String value) {
+        return value == null ? null : value.replaceAll("[\\s.]", "");
+    }
+
+    /** "0901 234 567", "0901.234.567" -> "0901234567". */
+    private String normalizePhone(String value) {
+        return value == null ? null : value.replaceAll("[\\s.()-]", "");
     }
 
     private String trim(String value) {

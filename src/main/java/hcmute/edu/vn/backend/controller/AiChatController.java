@@ -1,11 +1,12 @@
-
 package hcmute.edu.vn.backend.controller;
 
 import hcmute.edu.vn.backend.dto.AiChatRequest;
-import hcmute.edu.vn.backend.dto.AiChatResponse;
 import hcmute.edu.vn.backend.service.GeminiAiService;
+import hcmute.edu.vn.backend.service.TripAccessException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -16,23 +17,33 @@ public class AiChatController {
     private final GeminiAiService geminiAiService;
 
     @GetMapping("/{tripId}/ai/history")
-    public ResponseEntity<AiChatResponse> getChatHistory(
-            @PathVariable Long tripId) {
-
-        return ResponseEntity.ok(
-                geminiAiService.getConversationHistory(tripId)
-        );
+    public ResponseEntity<?> getChatHistory(@PathVariable Long tripId) {
+        try {
+            return ResponseEntity.ok(geminiAiService.getConversationHistory(tripId));
+        } catch (TripAccessException e) {
+            return ResponseEntity.status(e.getStatus()).body(e.getMessage());
+        } catch (AccessDeniedException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(e.getMessage());
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
     }
 
     @PostMapping("/{tripId}/ai/chat")
-    public ResponseEntity<AiChatResponse> chatWithAi(
-            @PathVariable Long tripId,
-            @RequestBody AiChatRequest request) {
-
+    public ResponseEntity<?> chatWithAi(@PathVariable Long tripId, @RequestBody AiChatRequest request) {
+        if (request == null) {
+            return ResponseEntity.badRequest().body("Thiếu nội dung tin nhắn.");
+        }
+        // tripId trên URL là nguồn duy nhất; bỏ qua tripId client gửi trong body.
         request.setTripId(tripId);
-
-        return ResponseEntity.ok(
-                geminiAiService.processChat(request)
-        );
+        try {
+            return ResponseEntity.ok(geminiAiService.processChat(request));
+        } catch (TripAccessException e) {
+            return ResponseEntity.status(e.getStatus()).body(e.getMessage());
+        } catch (AccessDeniedException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(e.getMessage());
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
     }
 }

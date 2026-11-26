@@ -10,6 +10,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -162,4 +163,19 @@ public interface PostRepository extends JpaRepository<Post, Long> {
             @Param("isFriend") boolean isFriend,
             @Param("beforeId") Long beforeId,
             Pageable pageable);
+
+    /**
+     * Đếm bài đăng công khai (PUBLISHED + APPROVED + PUBLIC) có tên địa điểm chứa :pattern (LIKE, escape bằng ký tự !),
+     * kèm số bài từ :since trở lại đây. Kết quả 1 dòng: [total (Long), recent (Long hoặc null)].
+     */
+    @Query("""
+            SELECT COUNT(p), SUM(CASE WHEN p.createdAt >= :since THEN 1 ELSE 0 END)
+            FROM Post p
+            WHERE p.status = 'PUBLISHED'
+              AND p.moderationStatus = 'APPROVED'
+              AND p.visibility = 'PUBLIC'
+              AND LOWER(p.locationName) LIKE :pattern ESCAPE '!'
+            """)
+    List<Object[]> countPublicPostsByLocation(@Param("pattern") String pattern,
+                                              @Param("since") LocalDateTime since);
 }

@@ -18,6 +18,11 @@ public class AiChatResponse {
     private List<PlaceDiscoveryDTO> recommendations;
     private boolean requiresConfirmation;
     private List<MessageHistoryDTO> history;
+    /** Ngày người dùng nhắc tới ("ngày 2 nên đi đâu"): FE chọn sẵn ngày này cho nút Thêm. */
+    private Long targetDayId;
+    private Integer targetDayNumber;
+    /** Địa điểm dùng làm mốc "gần ..." khi xếp hạng gợi ý. */
+    private String anchorName;
 
     @Data
     @Builder

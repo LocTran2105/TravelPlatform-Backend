@@ -28,7 +28,9 @@ public class TripDay {
     @Column(name = "day_date")
     private LocalDate dayDate;
 
+    // Luôn trả địa điểm theo thứ tự người dùng sắp xếp (kéo thả), không theo thứ tự chèn vào DB.
     @OneToMany(mappedBy = "tripDay", cascade = CascadeType.ALL)
+    @OrderBy("orderIndex ASC, id ASC")
     private List<TripDestination> destinations;
 
 }
