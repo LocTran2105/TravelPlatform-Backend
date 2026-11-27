@@ -481,6 +481,15 @@ public class OsmPlaceDiscoveryService {
         OverpassFetch fetch = fetchOverpass(query, safeDestination, "ADMIN_" + category,
                 ADMIN_READ_TIMEOUT_MS, ADMIN_TOTAL_TIMEOUT_MS);
         if (fetch.allEndpointsFailed()) {
+            // Overpass lỗi nhưng DB có thể đã lưu POI OSM quanh đây (từ lần tìm trước): cho Admin chọn
+            // các POI đó để liên kết, tránh phải tạo Place PARTNER trùng với địa điểm OSM.
+            List<Place> saved = findSavedOsmPlacesNear(
+                    category, latitude.doubleValue(), longitude.doubleValue(), safeRadius, safeLimit);
+            if (!saved.isEmpty()) {
+                log.warn("Overpass lỗi khi Admin kiểm tra '{}'/{}; dùng {} POI OSM đã lưu trong DB.",
+                        safeDestination, category, saved.size());
+                return saved;
+            }
             // Khác với "không có POI": mọi máy chủ Overpass đều lỗi/quá tải nên CHƯA kiểm tra được.
             // Báo rõ cho Admin thay vì trả danh sách rỗng (dễ hiểu nhầm là OSM không có địa điểm).
             throw new IllegalStateException(
@@ -877,6 +886,23 @@ public class OsmPlaceDiscoveryService {
             parts.add(fallbackDestination);
         }
         return String.join(", ", parts);
+    }
+
+    /** POI OSM đã lưu, đúng loại, trong bán kính radiusMeters quanh (lat, lon); gần nhất trước. */
+    private List<Place> findSavedOsmPlacesNear(
+            String category, double lat, double lon, int radiusMeters, int limit) {
+        double dLat = radiusMeters / 111_320.0;
+        double dLon = radiusMeters / (111_320.0 * Math.max(0.01, Math.cos(Math.toRadians(lat))));
+        return placeRepository.findOsmPlacesInBox(category, lat - dLat, lat + dLat, lon - dLon, lon + dLon)
+                .stream()
+                .filter(p -> p.getLatitude() != null && p.getLongitude() != null)
+                .map(p -> Map.entry(p, calculateDistanceMeters(
+                        lat, lon, p.getLatitude().doubleValue(), p.getLongitude().doubleValue())))
+                .filter(e -> e.getValue() <= radiusMeters)
+                .sorted(Map.Entry.comparingByValue())
+                .limit(limit)
+                .map(Map.Entry::getKey)
+                .toList();
     }
 
     private static double calculateDistanceMeters(

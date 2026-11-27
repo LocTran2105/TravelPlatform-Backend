@@ -186,6 +186,27 @@ public interface PlaceRepository extends JpaRepository<Place, Long> {
             @Param("limit") int limit
     );
 
+    /**
+     * POI OSM đã lưu trong một khung tọa độ, đúng loại. Dùng khi Admin duyệt Business mà Overpass lỗi:
+     * vẫn liên kết được với POI đã có trong DB thay vì phải tạo Place PARTNER trùng với OSM.
+     */
+    @Query(value = """
+            SELECT p.*
+            FROM places p
+            WHERE UPPER(TRIM(p.provider)) = 'OSM'
+              AND UPPER(TRIM(p.place_type)) = UPPER(TRIM(:placeType))
+              AND p.latitude BETWEEN :minLat AND :maxLat
+              AND p.longitude BETWEEN :minLng AND :maxLng
+            LIMIT 500
+            """, nativeQuery = true)
+    List<Place> findOsmPlacesInBox(
+            @Param("placeType") String placeType,
+            @Param("minLat") double minLat,
+            @Param("maxLat") double maxLat,
+            @Param("minLng") double minLng,
+            @Param("maxLng") double maxLng
+    );
+
     /** 1 nếu Place là PARTNER của Business đang công khai (đã duyệt, đã xuất bản, đang mở, chưa xóa). */
     @Query(value = """
             SELECT COUNT(*)
