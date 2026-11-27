@@ -102,6 +102,28 @@ public class PartnerPlaceLinkService {
         return saved;
     }
 
+    /**
+     * Admin sửa vị trí Business: Place PARTNER của Business đi theo (bản đồ và ô tìm kiếm dùng bảng places).
+     * Place OSM đã liên kết giữ nguyên tọa độ của OSM.
+     */
+    @Transactional
+    public void syncPartnerPlaceLocation(PartnerBusiness business) {
+        if (business == null || business.getId() == null
+                || business.getLatitude() == null || business.getLongitude() == null) {
+            return;
+        }
+        placeRepository.findByProviderAndProviderPlaceId("PARTNER", "partner-business/" + business.getId())
+                .ifPresent(place -> {
+                    place.setName(business.getName());
+                    place.setAddress(business.getAddress());
+                    place.setDestination(destinationFor(business));
+                    place.setLatitude(business.getLatitude());
+                    place.setLongitude(business.getLongitude());
+                    placeRepository.save(place);
+                    log.info("Đồng bộ vị trí PARTNER Place {} theo Business {}", place.getId(), business.getId());
+                });
+    }
+
     private PartnerBusiness requireBusiness(Long businessId) {
         if (businessId == null || businessId <= 0) {
             throw new IllegalArgumentException("Business ID không hợp lệ.");

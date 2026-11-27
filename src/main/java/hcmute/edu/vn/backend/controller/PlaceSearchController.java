@@ -3,6 +3,7 @@ package hcmute.edu.vn.backend.controller;
 import hcmute.edu.vn.backend.dto.PlaceSearchResult;
 import hcmute.edu.vn.backend.entity.Place;
 import hcmute.edu.vn.backend.repository.PlaceRepository;
+import hcmute.edu.vn.backend.service.PlaceNameMatcher;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -10,8 +11,12 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Tìm địa điểm ĐÃ CÓ trong hệ thống theo tên hoặc địa chỉ.
@@ -26,6 +31,7 @@ public class PlaceSearchController {
     private static final int MIN_QUERY_LENGTH = 2;
     private static final int MAX_QUERY_LENGTH = 120;
     private static final int MAX_LIMIT = 10;
+    private static final double SAME_PLACE_METERS = 100.0;
 
     private final PlaceRepository placeRepository;
 
@@ -46,17 +52,66 @@ public class PlaceSearchController {
         if (firstSegment.length() < MIN_QUERY_LENGTH) firstSegment = q;
 
         int safeLimit = Math.max(1, Math.min(limit, MAX_LIMIT));
-        List<Place> places = placeRepository.searchPublicPlaces(
+        // Lấy dư để sau khi gộp trùng vẫn đủ số kết quả.
+        List<Place> places = new ArrayList<>(placeRepository.searchPublicPlaces(
                 likePattern(q),
                 likePattern(firstSegment),
                 clean(destination),
-                safeLimit);
+                safeLimit * 2));
 
-        return ResponseEntity.ok(places.stream().map(this::toResult).toList());
+        // "Tùng cafe" không khớp LIKE '%Tùng cafe%' với "Cafe Tùng": tìm thêm theo từ khóa có nghĩa dài nhất,
+        // rồi giữ Place có tên/địa chỉ chứa đủ mọi từ khóa (không phân biệt dấu, thứ tự, từ chung như "cafe").
+        List<String> tokens = List.of(PlaceNameMatcher.normalize(q).split(" ")).stream()
+                .filter(t -> t.length() >= 2).toList();
+        if (q.contains(" ") && !tokens.isEmpty() && places.size() < safeLimit * 2) {
+            String longest = tokens.stream().max((a, b) -> Integer.compare(a.length(), b.length())).orElseThrow();
+            Set<Long> seen = places.stream().map(Place::getId).collect(Collectors.toSet());
+            for (Place place : placeRepository.searchPublicPlaces(
+                    likePattern(longest), likePattern(longest), clean(destination), 30)) {
+                String haystack = PlaceNameMatcher.normalize(place.getName() + " " + place.getAddress());
+                if (!seen.contains(place.getId()) && tokens.stream().allMatch(haystack::contains)) {
+                    places.add(place);
+                    seen.add(place.getId());
+                }
+            }
+        }
+
+        Set<Long> businessIds = places.stream()
+                .map(Place::getPartnerBusinessId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Set<Long> publicBusinessIds = businessIds.isEmpty() ? Set.of()
+                : placeRepository.findPublicBusinessIds(businessIds).stream()
+                        .map(Number::longValue)
+                        .collect(Collectors.toSet());
+
+        // Đã xác minh lên trước (sort ổn định giữ thứ tự liên quan của SQL), rồi gộp trùng: bản đã xác minh được giữ.
+        List<PlaceSearchResult> candidates = places.stream()
+                .map(place -> toResult(place, place.getPartnerBusinessId() != null
+                        && publicBusinessIds.contains(place.getPartnerBusinessId())))
+                .sorted((a, b) -> Boolean.compare(b.verified(), a.verified()))
+                .toList();
+        List<PlaceSearchResult> results = new ArrayList<>();
+        for (PlaceSearchResult result : candidates) {
+            if (results.stream().noneMatch(kept -> isSamePlace(kept, result))) results.add(result);
+            if (results.size() >= safeLimit) break;
+        }
+        return ResponseEntity.ok(results);
     }
 
-    private PlaceSearchResult toResult(Place place) {
-        boolean partner = "PARTNER".equalsIgnoreCase(place.getProvider());
+    /**
+     * Hai kết quả là một địa điểm khi tên gần giống và cách nhau dưới 100 m
+     * (vd. OSM có cả "Cafe Tùng" và "Tùng Coffee" cho cùng một quán). Kết quả đã xác minh đứng trước nên được giữ.
+     */
+    private static boolean isSamePlace(PlaceSearchResult a, PlaceSearchResult b) {
+        if (a.latitude() == null || a.longitude() == null || b.latitude() == null || b.longitude() == null) return false;
+        if (!PlaceNameMatcher.similar(a.name(), b.name())) return false;
+        return PlaceNameMatcher.distanceMeters(
+                a.latitude().doubleValue(), a.longitude().doubleValue(),
+                b.latitude().doubleValue(), b.longitude().doubleValue()) <= SAME_PLACE_METERS;
+    }
+
+    private PlaceSearchResult toResult(Place place, boolean verified) {
         return new PlaceSearchResult(
                 place.getId(),
                 place.getName(),
@@ -64,10 +119,10 @@ public class PlaceSearchController {
                 place.getDestination(),
                 place.getPlaceType(),
                 place.getProvider() == null ? null : place.getProvider().toUpperCase(Locale.ROOT),
+                place.getProviderPlaceId(),
                 place.getLatitude(),
                 place.getLongitude(),
-                // Query chỉ trả PARTNER khi Business đã duyệt + công khai + đang mở.
-                partner);
+                verified);
     }
 
     private static String clean(String value) {

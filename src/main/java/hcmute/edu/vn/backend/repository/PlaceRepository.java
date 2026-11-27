@@ -153,7 +153,12 @@ public interface PlaceRepository extends JpaRepository<Place, Long> {
                     )
               )
             ORDER BY
-                CASE WHEN UPPER(TRIM(p.provider)) = 'PARTNER' THEN 0 ELSE 1 END,
+                -- Đã xác minh (PARTNER hoặc OSM đã liên kết với Business công khai) lên đầu
+                CASE WHEN b.id IS NOT NULL
+                          AND b.verification_status IN ('APPROVED', 'VERIFIED')
+                          AND b.publication_status = 'PUBLISHED'
+                          AND b.operating_status = 'OPEN'
+                          AND b.deleted_at IS NULL THEN 0 ELSE 1 END,
                 CASE WHEN :destination <> '' AND p.destination LIKE CONCAT('%', :destination, '%') THEN 0 ELSE 1 END,
                 CASE WHEN p.name LIKE :pattern THEN 0 ELSE 1 END,
                 p.id DESC
@@ -206,6 +211,18 @@ public interface PlaceRepository extends JpaRepository<Place, Long> {
             @Param("minLng") double minLng,
             @Param("maxLng") double maxLng
     );
+
+    /** Trong các Business được hỏi, những Business đang công khai (đã duyệt, đã xuất bản, đang mở, chưa xóa). */
+    @Query(value = """
+            SELECT b.id
+            FROM partner_businesses b
+            WHERE b.id IN (:businessIds)
+              AND b.verification_status IN ('APPROVED', 'VERIFIED')
+              AND b.publication_status = 'PUBLISHED'
+              AND b.operating_status = 'OPEN'
+              AND b.deleted_at IS NULL
+            """, nativeQuery = true)
+    List<Number> findPublicBusinessIds(@Param("businessIds") java.util.Collection<Long> businessIds);
 
     /** 1 nếu Place là PARTNER của Business đang công khai (đã duyệt, đã xuất bản, đang mở, chưa xóa). */
     @Query(value = """

@@ -1,10 +1,15 @@
 package hcmute.edu.vn.backend.dto;
 
 import hcmute.edu.vn.backend.entity.PartnerBusiness;
+import hcmute.edu.vn.backend.entity.Place;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
+/**
+ * Business cho trang quản trị. placeId / placeProvider / providerPlaceId là Place đang liên kết
+ * (OSM đã xác nhận hoặc PARTNER); null khi Business chưa được duyệt vị trí.
+ */
 public record PartnerBusinessAdminResponse(
         Long id,
         Long partnerId,
@@ -25,13 +30,17 @@ public record PartnerBusinessAdminResponse(
         String publicationStatus,
         String operatingStatus,
         LocalDateTime createdAt,
-        LocalDateTime verifiedAt
+        LocalDateTime verifiedAt,
+        Long placeId,
+        String placeProvider,
+        String providerPlaceId
 ) {
 
-    public static PartnerBusinessAdminResponse from(
-            PartnerBusiness business
-    ) {
+    public static PartnerBusinessAdminResponse from(PartnerBusiness business) {
+        return from(business, null);
+    }
 
+    public static PartnerBusinessAdminResponse from(PartnerBusiness business, Place linkedPlace) {
         return new PartnerBusinessAdminResponse(
                 business.getId(),
                 business.getPartner().getId(),
@@ -52,7 +61,10 @@ public record PartnerBusinessAdminResponse(
                 business.getPublicationStatus(),
                 business.getOperatingStatus(),
                 business.getCreatedAt(),
-                business.getVerifiedAt()
+                business.getVerifiedAt(),
+                linkedPlace == null ? null : linkedPlace.getId(),
+                linkedPlace == null ? null : linkedPlace.getProvider(),
+                linkedPlace == null ? null : linkedPlace.getProviderPlaceId()
         );
     }
 }

@@ -16,6 +16,8 @@ public interface PlaceLinkRepository extends JpaRepository<Place, Long> {
 
     List<Place> findByPartnerBusinessIdAndProvider(Long partnerBusinessId, String provider);
 
+    List<Place> findByPartnerBusinessIdIn(java.util.Collection<Long> partnerBusinessIds);
+
     Optional<Place> findByProviderAndProviderPlaceId(String provider, String providerPlaceId);
 
     @Query("""

@@ -15,6 +15,7 @@ import hcmute.edu.vn.backend.entity.User;
 import hcmute.edu.vn.backend.repository.PartnerBusinessRepository;
 import hcmute.edu.vn.backend.repository.PartnerBusinessMediaRepository;
 import hcmute.edu.vn.backend.repository.PartnerSubmissionRepository;
+import hcmute.edu.vn.backend.repository.PlaceLinkRepository;
 import hcmute.edu.vn.backend.repository.UserRepository;
 
 import lombok.RequiredArgsConstructor;
@@ -29,6 +30,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import java.util.Locale;
 import java.util.Set;
 
@@ -61,6 +64,8 @@ public class AdminPartnerBusinessService {
     private final OsmPlaceDiscoveryService osmPlaceDiscoveryService;
 
     private final PartnerBusinessMediaRepository mediaRepository;
+
+    private final PlaceLinkRepository placeLinkRepository;
 
     /**
      * Admin xem danh sách yêu cầu duyệt Business.
@@ -340,14 +345,16 @@ public class AdminPartnerBusinessService {
                 Sort.by(Sort.Direction.DESC, "createdAt")
         );
 
-        return businessRepository.searchForAdmin(
-                        normalizeOptional(verificationStatus),
-                        normalizeOptional(publicationStatus),
-                        normalizeOptional(businessType),
-                        trimToNull(keyword),
-                        pageable
-                )
-                .map(PartnerBusinessAdminResponse::from);
+        Page<PartnerBusiness> businesses = businessRepository.searchForAdmin(
+                normalizeOptional(verificationStatus),
+                normalizeOptional(publicationStatus),
+                normalizeOptional(businessType),
+                trimToNull(keyword),
+                pageable
+        );
+        // Place đang liên kết của cả trang trong một truy vấn
+        Map<Long, Place> linked = linkedPlaces(businesses.getContent().stream().map(PartnerBusiness::getId).toList());
+        return businesses.map(business -> PartnerBusinessAdminResponse.from(business, linked.get(business.getId())));
     }
 
     /**
@@ -409,7 +416,7 @@ public class AdminPartnerBusinessService {
                 newStatus
         );
 
-        return PartnerBusinessAdminResponse.from(business);
+        return toAdminResponse(business);
     }
 
     /**
@@ -461,7 +468,7 @@ public class AdminPartnerBusinessService {
                 newStatus
         );
 
-        return PartnerBusinessAdminResponse.from(business);
+        return toAdminResponse(business);
     }
 
     /**
@@ -536,6 +543,9 @@ public class AdminPartnerBusinessService {
         PartnerBusiness saved =
                 businessRepository.save(business);
 
+        // Place PARTNER (bản đồ, tìm kiếm) đi theo vị trí mới; Place OSM giữ tọa độ của OSM.
+        partnerPlaceLinkService.syncPartnerPlaceLocation(saved);
+
         String newLocation = saved.getAddress()
                 + ", "
                 + saved.getCity();
@@ -550,7 +560,18 @@ public class AdminPartnerBusinessService {
                 newLocation
         );
 
-        return PartnerBusinessAdminResponse.from(saved);
+        return toAdminResponse(saved);
+    }
+
+    private PartnerBusinessAdminResponse toAdminResponse(PartnerBusiness business) {
+        return PartnerBusinessAdminResponse.from(business, linkedPlaces(List.of(business.getId())).get(business.getId()));
+    }
+
+    /** { businessId: Place đang liên kết } (OSM đã xác nhận hoặc PARTNER; mỗi Business có tối đa một). */
+    private Map<Long, Place> linkedPlaces(List<Long> businessIds) {
+        if (businessIds.isEmpty()) return Map.of();
+        return placeLinkRepository.findByPartnerBusinessIdIn(businessIds).stream()
+                .collect(Collectors.toMap(Place::getPartnerBusinessId, place -> place, (a, b) -> a));
     }
 
     private PartnerBusiness getBusiness(Long businessId) {
