@@ -1,0 +1,1596 @@
+{
+ "fetchedAt": "2026-11-27T05:41:25Z",
+ "source": "Overpass amenity=cafe bbox 11.85,108.33,12.05,108.55",
+ "cafes": [
+  {
+   "ref": "node/1160978717",
+   "name": "Gia Nguyễn",
+   "latitude": 11.9422355,
+   "longitude": 108.4361944
+  },
+  {
+   "ref": "node/3864396278",
+   "name": "Bicycle up",
+   "latitude": 11.9448009,
+   "longitude": 108.4349506
+  },
+  {
+   "ref": "node/4070796725",
+   "name": "Cafe Tùng",
+   "latitude": 11.9442999,
+   "longitude": 108.4358347
+  },
+  {
+   "ref": "node/4100827890",
+   "name": "Weasel Coffee Shop - Kopi Lewak",
+   "latitude": 11.8995604,
+   "longitude": 108.3478029
+  },
+  {
+   "ref": "node/4120639889",
+   "name": "Cafe Noi",
+   "latitude": 11.9453242,
+   "longitude": 108.4348457
+  },
+  {
+   "ref": "node/4146727689",
+   "name": "Trung Hiue Coffee",
+   "latitude": 11.8925724,
+   "longitude": 108.3463104
+  },
+  {
+   "ref": "node/4206280090",
+   "name": "the muse",
+   "latitude": 11.9447051,
+   "longitude": 108.4342791
+  },
+  {
+   "ref": "node/4206500720",
+   "name": "An Cafe",
+   "latitude": 11.9418201,
+   "longitude": 108.4338744
+  },
+  {
+   "ref": "node/4245762990",
+   "name": "Cafe Bao Tran",
+   "latitude": 11.9350601,
+   "longitude": 108.4384611
+  },
+  {
+   "ref": "node/4281674493",
+   "name": "News & Art Café",
+   "latitude": 11.944873,
+   "longitude": 108.4348706
+  },
+  {
+   "ref": "node/4281690189",
+   "name": "Tam Chau",
+   "latitude": 11.9534951,
+   "longitude": 108.444722
+  },
+  {
+   "ref": "node/4281691189",
+   "name": "Tam Chau",
+   "latitude": 11.9503039,
+   "longitude": 108.447373
+  },
+  {
+   "ref": "node/4285738191",
+   "name": "Le Ky Tea & Coffee",
+   "latitude": 11.950938,
+   "longitude": 108.4338351
+  },
+  {
+   "ref": "node/4285739390",
+   "name": "Windmill Coffee",
+   "latitude": 11.9429682,
+   "longitude": 108.4354973
+  },
+  {
+   "ref": "node/4348159990",
+   "name": "Napoli Coffee",
+   "latitude": 11.942825,
+   "longitude": 108.432072
+  },
+  {
+   "ref": "node/4394491091",
+   "name": "Coffee One Day",
+   "latitude": 11.9412923,
+   "longitude": 108.4384368
+  },
+  {
+   "ref": "node/4398906395",
+   "name": "Len's Cafe",
+   "latitude": 11.9415297,
+   "longitude": 108.4365897
+  },
+  {
+   "ref": "node/4426130491",
+   "name": "Thong Dalat Space",
+   "latitude": 11.9469104,
+   "longitude": 108.4406502
+  },
+  {
+   "ref": "node/4601279190",
+   "name": "Goût",
+   "latitude": 11.945756,
+   "longitude": 108.43558
+  },
+  {
+   "ref": "node/4601279191",
+   "name": "La Viet Coffee",
+   "latitude": 11.9569186,
+   "longitude": 108.435107
+  },
+  {
+   "ref": "node/4650369792",
+   "name": "Cafe Phôi Pha",
+   "latitude": 11.935249,
+   "longitude": 108.4299242
+  },
+  {
+   "ref": "node/4682794789",
+   "name": "One More Café",
+   "latitude": 11.9442085,
+   "longitude": 108.4329395
+  },
+  {
+   "ref": "node/4759061757",
+   "name": "Green Café",
+   "latitude": 11.9450795,
+   "longitude": 108.4392736
+  },
+  {
+   "ref": "node/4798005122",
+   "name": "K'ho Coffee",
+   "latitude": 12.0099898,
+   "longitude": 108.4130615
+  },
+  {
+   "ref": "node/4908254928",
+   "name": "Napoli Coffee",
+   "latitude": 11.9538494,
+   "longitude": 108.4410514
+  },
+  {
+   "ref": "node/4908254929",
+   "name": "Eslow Coffee",
+   "latitude": 11.9542568,
+   "longitude": 108.4418443
+  },
+  {
+   "ref": "node/4908284524",
+   "name": "Box Coffee",
+   "latitude": 11.9533522,
+   "longitude": 108.4401293
+  },
+  {
+   "ref": "node/4908284525",
+   "name": "Ca Phe Nguyen Chat",
+   "latitude": 11.9544785,
+   "longitude": 108.4420402
+  },
+  {
+   "ref": "node/4926652021",
+   "name": "School Bus cafe",
+   "latitude": 11.9663024,
+   "longitude": 108.4362548
+  },
+  {
+   "ref": "node/4926652122",
+   "name": "Sunshine cafe",
+   "latitude": 11.9374314,
+   "longitude": 108.4492265
+  },
+  {
+   "ref": "node/5071883521",
+   "name": "Tín phát coffee",
+   "latitude": 11.9577293,
+   "longitude": 108.4417702
+  },
+  {
+   "ref": "node/5096900822",
+   "name": "Bùivănngọ coffee",
+   "latitude": 11.924598,
+   "longitude": 108.4468449
+  },
+  {
+   "ref": "node/5109595110",
+   "name": "Café Lịnh Tâm",
+   "latitude": 11.9241382,
+   "longitude": 108.445432
+  },
+  {
+   "ref": "node/5157013621",
+   "name": "The Shack",
+   "latitude": 11.9790989,
+   "longitude": 108.4109225
+  },
+  {
+   "ref": "node/5246715621",
+   "name": "Daily Coffee",
+   "latitude": 11.9331256,
+   "longitude": 108.4298665
+  },
+  {
+   "ref": "node/5271296923",
+   "name": "Tam Cafe",
+   "latitude": 11.9398264,
+   "longitude": 108.434199
+  },
+  {
+   "ref": "node/5276601322",
+   "name": "cafe An",
+   "latitude": 11.9302182,
+   "longitude": 108.4411204
+  },
+  {
+   "ref": "node/5334556721",
+   "name": "Maybe Blue Coffee",
+   "latitude": 11.9343773,
+   "longitude": 108.4315149
+  },
+  {
+   "ref": "node/5338577121",
+   "name": "Sóc Nâu",
+   "latitude": 11.936091,
+   "longitude": 108.4409402
+  },
+  {
+   "ref": "node/5423994721",
+   "name": "DelYcious",
+   "latitude": 11.9437213,
+   "longitude": 108.4349248
+  },
+  {
+   "ref": "node/5532420122",
+   "name": "Biang Bistro",
+   "latitude": 11.9463978,
+   "longitude": 108.4391821
+  },
+  {
+   "ref": "node/5676981613",
+   "name": "Cafe Cánh Đồng Hoa",
+   "latitude": 11.9078014,
+   "longitude": 108.4595818
+  },
+  {
+   "ref": "node/5921839185",
+   "name": "Cà phê nguyên chất TRANG - Capuchino Đà Lạt",
+   "latitude": 11.9431264,
+   "longitude": 108.4324587
+  },
+  {
+   "ref": "node/5923215985",
+   "name": "dãy cafe",
+   "latitude": 11.9364789,
+   "longitude": 108.4269673
+  },
+  {
+   "ref": "node/5927881385",
+   "name": "RoiVillaCoffee",
+   "latitude": 11.9455851,
+   "longitude": 108.4292158
+  },
+  {
+   "ref": "node/5955859585",
+   "name": "Gâu Garden",
+   "latitude": 11.9418831,
+   "longitude": 108.4671034
+  },
+  {
+   "ref": "node/5980607285",
+   "name": "Wood stock",
+   "latitude": 11.9466549,
+   "longitude": 108.4405846
+  },
+  {
+   "ref": "node/6029367225",
+   "name": "Minino",
+   "latitude": 11.9464097,
+   "longitude": 108.5011709
+  },
+  {
+   "ref": "node/6029367228",
+   "name": "Giai Khat",
+   "latitude": 11.9464279,
+   "longitude": 108.5011158
+  },
+  {
+   "ref": "node/6029368952",
+   "name": "Chuc",
+   "latitude": 11.9461451,
+   "longitude": 108.500517
+  },
+  {
+   "ref": "node/6029368969",
+   "name": "24 hr Coffee",
+   "latitude": 11.9406105,
+   "longitude": 108.4517094
+  },
+  {
+   "ref": "node/6029369196",
+   "name": "Vinh Hung",
+   "latitude": 11.9460898,
+   "longitude": 108.5008594
+  },
+  {
+   "ref": "node/6029371340",
+   "name": "Hai Dung",
+   "latitude": 11.9461227,
+   "longitude": 108.5007349
+  },
+  {
+   "ref": "node/6029371341",
+   "name": "Ngoc",
+   "latitude": 11.9461315,
+   "longitude": 108.5005768
+  },
+  {
+   "ref": "node/6029372249",
+   "name": "Cafe 999",
+   "latitude": 11.9461477,
+   "longitude": 108.5004643
+  },
+  {
+   "ref": "node/6029373130",
+   "name": "Milano Coffee",
+   "latitude": 11.9420455,
+   "longitude": 108.4531595
+  },
+  {
+   "ref": "node/6031249126",
+   "name": "Royal Garden Cafe",
+   "latitude": 11.9449344,
+   "longitude": 108.4699174
+  },
+  {
+   "ref": "node/6152445985",
+   "name": "Harry Potter Coffee",
+   "latitude": 11.9558341,
+   "longitude": 108.4719755
+  },
+  {
+   "ref": "node/6152503085",
+   "name": "Sữa đậu nành",
+   "latitude": 11.943486,
+   "longitude": 108.4352953
+  },
+  {
+   "ref": "node/6152520385",
+   "name": "Tùng Coffee",
+   "latitude": 11.943865,
+   "longitude": 108.4358513
+  },
+  {
+   "ref": "node/6152524285",
+   "name": "Still Cafe",
+   "latitude": 11.9443315,
+   "longitude": 108.454585
+  },
+  {
+   "ref": "node/6165241286",
+   "name": "Nông trại vui vẻ",
+   "latitude": 11.9422587,
+   "longitude": 108.4862126
+  },
+  {
+   "ref": "node/6170462686",
+   "name": "nhạc quán Diễm Xưa",
+   "latitude": 11.9335561,
+   "longitude": 108.4575253
+  },
+  {
+   "ref": "node/6175932386",
+   "name": "Cà phê Dõc Ga",
+   "latitude": 11.9421295,
+   "longitude": 108.4528364
+  },
+  {
+   "ref": "node/6251401186",
+   "name": "7o’clock coffee",
+   "latitude": 11.9439435,
+   "longitude": 108.4346859
+  },
+  {
+   "ref": "node/6282366185",
+   "name": "Reply 1994",
+   "latitude": 11.9410611,
+   "longitude": 108.4834747
+  },
+  {
+   "ref": "node/6298304185",
+   "name": "Trang Sua Bap Bi Do",
+   "latitude": 11.9406235,
+   "longitude": 108.4316115
+  },
+  {
+   "ref": "node/6312483785",
+   "name": "Vườn Yên",
+   "latitude": 11.949256,
+   "longitude": 108.4276498
+  },
+  {
+   "ref": "node/6418806785",
+   "name": "Sunny Farm",
+   "latitude": 11.9441516,
+   "longitude": 108.4884062
+  },
+  {
+   "ref": "node/6423288385",
+   "name": "Hoa Sūa",
+   "latitude": 11.9435607,
+   "longitude": 108.435316
+  },
+  {
+   "ref": "node/6441975286",
+   "name": "Piccolo coffee and funny",
+   "latitude": 11.943833,
+   "longitude": 108.4330554
+  },
+  {
+   "ref": "node/6489860386",
+   "name": "L'espoir",
+   "latitude": 11.9491533,
+   "longitude": 108.4355522
+  },
+  {
+   "ref": "node/6546386760",
+   "name": "Harizon Coffee",
+   "latitude": 11.9328063,
+   "longitude": 108.4456548
+  },
+  {
+   "ref": "node/6546427968",
+   "name": "Cà Phê Hoa Phượng",
+   "latitude": 11.9327713,
+   "longitude": 108.4459072
+  },
+  {
+   "ref": "node/6842597086",
+   "name": "The Choco",
+   "latitude": 11.9421198,
+   "longitude": 108.4545891
+  },
+  {
+   "ref": "node/7005659185",
+   "name": "Dreamer",
+   "latitude": 11.9389119,
+   "longitude": 108.4547544
+  },
+  {
+   "ref": "node/7086494785",
+   "name": "Axuka",
+   "latitude": 11.9458311,
+   "longitude": 108.4348283
+  },
+  {
+   "ref": "node/7106039085",
+   "name": "Fresh Dalat",
+   "latitude": 11.9480154,
+   "longitude": 108.4090708
+  },
+  {
+   "ref": "node/7109319287",
+   "name": "Delta coffee & Tea",
+   "latitude": 11.9438698,
+   "longitude": 108.4502421
+  },
+  {
+   "ref": "node/7140136187",
+   "name": "Tiệm cafe Cô Bông",
+   "latitude": 11.9501663,
+   "longitude": 108.456605
+  },
+  {
+   "ref": "node/7140767288",
+   "name": "Ca phe nguyen chat",
+   "latitude": 11.9517663,
+   "longitude": 108.4390529
+  },
+  {
+   "ref": "node/7140767289",
+   "name": "Cafe Bin Bin",
+   "latitude": 11.9517774,
+   "longitude": 108.4390377
+  },
+  {
+   "ref": "node/7140767291",
+   "name": "Teddy coffee",
+   "latitude": 11.9446054,
+   "longitude": 108.4308947
+  },
+  {
+   "ref": "node/7153011147",
+   "name": "Giai Khat Cafe",
+   "latitude": 11.9450347,
+   "longitude": 108.4356573
+  },
+  {
+   "ref": "node/7155476185",
+   "name": "Em ta nung Coffee Farm",
+   "latitude": 11.9061114,
+   "longitude": 108.3512578
+  },
+  {
+   "ref": "node/7185774486",
+   "name": "Culture Bean",
+   "latitude": 11.9402683,
+   "longitude": 108.4290945
+  },
+  {
+   "ref": "node/7187116385",
+   "name": "em tà nung coffee farm",
+   "latitude": 11.9062005,
+   "longitude": 108.3514499
+  },
+  {
+   "ref": "node/7222492685",
+   "name": "Café Phia",
+   "latitude": 11.9367393,
+   "longitude": 108.4827127
+  },
+  {
+   "ref": "node/7236155987",
+   "name": "LululoLa Coffee+",
+   "latitude": 11.9201166,
+   "longitude": 108.4421181
+  },
+  {
+   "ref": "node/7274221786",
+   "name": "Coffee Hang",
+   "latitude": 11.9368179,
+   "longitude": 108.4279207
+  },
+  {
+   "ref": "node/7934590163",
+   "name": "Cuties Coffee M&m",
+   "latitude": 11.9571264,
+   "longitude": 108.441
+  },
+  {
+   "ref": "node/8247211017",
+   "name": "Ngõ hơi hẹp - Coffee & Tea",
+   "latitude": 11.925108,
+   "longitude": 108.4545123
+  },
+  {
+   "ref": "node/8274823567",
+   "name": "Chuồn Chuồn Coffee & Bistro",
+   "latitude": 11.8890235,
+   "longitude": 108.3496465
+  },
+  {
+   "ref": "node/8310652209",
+   "name": "The Seen House",
+   "latitude": 11.9006985,
+   "longitude": 108.4341959
+  },
+  {
+   "ref": "node/8427516522",
+   "name": "Kyoudai Coffee",
+   "latitude": 11.9518328,
+   "longitude": 108.4324474
+  },
+  {
+   "ref": "node/8457350609",
+   "name": "Người thương ơi coffee",
+   "latitude": 11.9716232,
+   "longitude": 108.4364398
+  },
+  {
+   "ref": "node/8491110017",
+   "name": "kong cafe",
+   "latitude": 11.9366367,
+   "longitude": 108.4833715
+  },
+  {
+   "ref": "node/8682375557",
+   "name": "Đợi ngày hoa nở",
+   "latitude": 11.90945,
+   "longitude": 108.4618114
+  },
+  {
+   "ref": "node/9632480353",
+   "name": "Crazy Coffee",
+   "latitude": 11.9343048,
+   "longitude": 108.4299518
+  },
+  {
+   "ref": "node/9633116698",
+   "name": "Bánh Căn",
+   "latitude": 11.9383552,
+   "longitude": 108.4350066
+  },
+  {
+   "ref": "node/9644783324",
+   "name": "Ca phe chon Phu An",
+   "latitude": 11.8582798,
+   "longitude": 108.454212
+  },
+  {
+   "ref": "node/9898763917",
+   "name": "Now And Here Buffet Chay",
+   "latitude": 11.9468484,
+   "longitude": 108.4324715
+  },
+  {
+   "ref": "node/9925995417",
+   "name": "Tiem cô Bo",
+   "latitude": 11.9403566,
+   "longitude": 108.4268057
+  },
+  {
+   "ref": "node/10252337809",
+   "name": "mây lang thang acoustic",
+   "latitude": 11.9411877,
+   "longitude": 108.4647331
+  },
+  {
+   "ref": "node/10598357206",
+   "name": "Em Ơi Cà Phê",
+   "latitude": 11.9546404,
+   "longitude": 108.4419241
+  },
+  {
+   "ref": "node/10729850906",
+   "name": "Da Lat",
+   "latitude": 11.9473902,
+   "longitude": 108.4342989
+  },
+  {
+   "ref": "node/10846172405",
+   "name": "The Mountain View",
+   "latitude": 11.9385337,
+   "longitude": 108.4633554
+  },
+  {
+   "ref": "node/11109544805",
+   "name": "Mr. P Bingsu & Tea Đà Lạt",
+   "latitude": 11.9434872,
+   "longitude": 108.4309607
+  },
+  {
+   "ref": "node/11422238371",
+   "name": "Trang 1",
+   "latitude": 11.9536864,
+   "longitude": 108.4407868
+  },
+  {
+   "ref": "node/11422425730",
+   "name": "Uni Cafe",
+   "latitude": 11.9266415,
+   "longitude": 108.4336144
+  },
+  {
+   "ref": "node/11500000569",
+   "name": "Cô Lan",
+   "latitude": 11.9450892,
+   "longitude": 108.4356161
+  },
+  {
+   "ref": "node/11503318374",
+   "name": "Banh mi xiu mai Chen",
+   "latitude": 11.9417988,
+   "longitude": 108.4308051
+  },
+  {
+   "ref": "node/11503318382",
+   "name": "Miên Gà 79",
+   "latitude": 11.9414863,
+   "longitude": 108.4321605
+  },
+  {
+   "ref": "node/11507417398",
+   "name": "Ma Chan",
+   "latitude": 11.9491369,
+   "longitude": 108.4340621
+  },
+  {
+   "ref": "node/11715800432",
+   "name": "Train Café Đà Lạt Railway Station",
+   "latitude": 11.9419281,
+   "longitude": 108.4548054
+  },
+  {
+   "ref": "node/11836717645",
+   "name": "Camly 9",
+   "latitude": 11.9444105,
+   "longitude": 108.4185476
+  },
+  {
+   "ref": "node/11836880038",
+   "name": "Mình Có Hẹn ở Đây - Coffee",
+   "latitude": 11.9346459,
+   "longitude": 108.4507217
+  },
+  {
+   "ref": "node/11836893530",
+   "name": "Thung lũng khói xanh",
+   "latitude": 11.9381086,
+   "longitude": 108.4935311
+  },
+  {
+   "ref": "node/11836926101",
+   "name": "Nông Trại Cún Puppy Farm",
+   "latitude": 11.9626641,
+   "longitude": 108.389072
+  },
+  {
+   "ref": "node/11836930635",
+   "name": "Cocaland Da Lat",
+   "latitude": 11.9432659,
+   "longitude": 108.4535753
+  },
+  {
+   "ref": "node/11836970223",
+   "name": "Tiệm Cà Phê Con Tù Lì",
+   "latitude": 11.9382846,
+   "longitude": 108.4829119
+  },
+  {
+   "ref": "node/11836974299",
+   "name": "IXORA HOMESTAY & COFFEE",
+   "latitude": 11.9432247,
+   "longitude": 108.5023931
+  },
+  {
+   "ref": "node/11837007076",
+   "name": "Suối Mơ",
+   "latitude": 11.9026315,
+   "longitude": 108.4401357
+  },
+  {
+   "ref": "node/11840567142",
+   "name": "The pet house",
+   "latitude": 11.9310645,
+   "longitude": 108.458962
+  },
+  {
+   "ref": "node/11840623933",
+   "name": "DÂU Homestay Bbq Đà Lạt",
+   "latitude": 11.9317364,
+   "longitude": 108.4380715
+  },
+  {
+   "ref": "node/11840626298",
+   "name": "Lời Của Gió",
+   "latitude": 11.9499845,
+   "longitude": 108.4912153
+  },
+  {
+   "ref": "node/11840636053",
+   "name": "Ngày của Nắng Coffee+",
+   "latitude": 11.9404352,
+   "longitude": 108.4200406
+  },
+  {
+   "ref": "node/11840645327",
+   "name": "Mọt BBQ & Cafe",
+   "latitude": 11.9411339,
+   "longitude": 108.4620494
+  },
+  {
+   "ref": "node/11840673733",
+   "name": "Tiệm cà phê Nhà Bên Suối",
+   "latitude": 11.9016681,
+   "longitude": 108.4447215
+  },
+  {
+   "ref": "node/11840675694",
+   "name": "Đồi Mây Đà Lạt",
+   "latitude": 11.946122,
+   "longitude": 108.5286658
+  },
+  {
+   "ref": "node/11840689717",
+   "name": "Wi’ Dalat",
+   "latitude": 11.9268648,
+   "longitude": 108.4368086
+  },
+  {
+   "ref": "node/11882697300",
+   "name": "K'fe House",
+   "latitude": 11.938698,
+   "longitude": 108.4444366
+  },
+  {
+   "ref": "node/11899834395",
+   "name": "Quán Của Thời Thanh Xuân",
+   "latitude": 11.9307864,
+   "longitude": 108.4284257
+  },
+  {
+   "ref": "node/11899840075",
+   "name": "Cánh Đồng Tuyết Đà Lạt",
+   "latitude": 11.9230787,
+   "longitude": 108.4440079
+  },
+  {
+   "ref": "node/11899845106",
+   "name": "Ami Garden Đà Lạt",
+   "latitude": 11.9262247,
+   "longitude": 108.4410391
+  },
+  {
+   "ref": "node/11899893285",
+   "name": "Gió Đà Lạt The Coffee",
+   "latitude": 11.9386585,
+   "longitude": 108.4635176
+  },
+  {
+   "ref": "node/11918229435",
+   "name": "Mây lang thang",
+   "latitude": 11.9401777,
+   "longitude": 108.4633308
+  },
+  {
+   "ref": "node/11918234758",
+   "name": "Cafe Guitar Mộc Căn Nhà Xưa",
+   "latitude": 11.9247948,
+   "longitude": 108.4470038
+  },
+  {
+   "ref": "node/11918255875",
+   "name": "Cung Tơ Chiều",
+   "latitude": 11.9330414,
+   "longitude": 108.426471
+  },
+  {
+   "ref": "node/11918287106",
+   "name": "Beautiful restaurant & Cafe",
+   "latitude": 11.8838468,
+   "longitude": 108.4181127
+  },
+  {
+   "ref": "node/11918375865",
+   "name": "Coffee Bên Đồi",
+   "latitude": 11.9757987,
+   "longitude": 108.4155814
+  },
+  {
+   "ref": "node/11919339869",
+   "name": "Ghiền BBQ Buffet Đà Lạt",
+   "latitude": 11.9354975,
+   "longitude": 108.4280796
+  },
+  {
+   "ref": "node/11921029237",
+   "name": "RỪNG NA UY cafe",
+   "latitude": 11.9381909,
+   "longitude": 108.4833207
+  },
+  {
+   "ref": "node/11921050670",
+   "name": "Tiệm cà phê Cheo veooo",
+   "latitude": 11.9382754,
+   "longitude": 108.482295
+  },
+  {
+   "ref": "node/11921053068",
+   "name": "The Hillside- Cafe Đà Lạt",
+   "latitude": 11.9382305,
+   "longitude": 108.4634314
+  },
+  {
+   "ref": "node/11921218809",
+   "name": "Ông Bà Ba Cafe",
+   "latitude": 11.9520237,
+   "longitude": 108.4801249
+  },
+  {
+   "ref": "node/11921269870",
+   "name": "Kimochi coffee",
+   "latitude": 11.9429134,
+   "longitude": 108.4677301
+  },
+  {
+   "ref": "node/11921271968",
+   "name": "Một Nhánh Thông",
+   "latitude": 11.9418994,
+   "longitude": 108.4789547
+  },
+  {
+   "ref": "node/11921276898",
+   "name": "Vì Yêu Mà Đến Coffee",
+   "latitude": 11.9457751,
+   "longitude": 108.4886556
+  },
+  {
+   "ref": "node/11932684670",
+   "name": "Trà sữa KOS - KOS Milk tea Đà Lạt",
+   "latitude": 11.9394464,
+   "longitude": 108.4340935
+  },
+  {
+   "ref": "node/12054486844",
+   "name": "NERO caffe Dalat",
+   "latitude": 11.9415489,
+   "longitude": 108.4519565
+  },
+  {
+   "ref": "node/12429462765",
+   "name": "La Mappa Café & Bistro",
+   "latitude": 11.9316736,
+   "longitude": 108.4267411
+  },
+  {
+   "ref": "node/12534048559",
+   "name": "Onion Coffee and Pastry Da Lat",
+   "latitude": 11.9718718,
+   "longitude": 108.4415823
+  },
+  {
+   "ref": "node/12573440922",
+   "name": "Cafe 84 Da Lat",
+   "latitude": 11.9399074,
+   "longitude": 108.4337467
+  },
+  {
+   "ref": "node/12586556116",
+   "name": "1thev Coffee Đà lạt",
+   "latitude": 11.9365464,
+   "longitude": 108.4632276
+  },
+  {
+   "ref": "node/12613088101",
+   "name": "Com",
+   "latitude": 11.9479303,
+   "longitude": 108.4659099
+  },
+  {
+   "ref": "node/12645202201",
+   "name": "Cozy cafe",
+   "latitude": 11.8824278,
+   "longitude": 108.4119455
+  },
+  {
+   "ref": "node/12717876602",
+   "name": "An Lạc Tâm Quán Chay 2",
+   "latitude": 11.9469983,
+   "longitude": 108.4655474
+  },
+  {
+   "ref": "node/12736621901",
+   "name": "Vegan restoran Hang Thien",
+   "latitude": 11.9539594,
+   "longitude": 108.4402362
+  },
+  {
+   "ref": "node/12757202803",
+   "name": "Tiệm Chay Thiên Thảo",
+   "latitude": 11.9533885,
+   "longitude": 108.430021
+  },
+  {
+   "ref": "node/12770400401",
+   "name": "Là Việt Coffee Kiosk",
+   "latitude": 11.9433406,
+   "longitude": 108.4358554
+  },
+  {
+   "ref": "node/12845217201",
+   "name": "Coffee Em và Trịnh",
+   "latitude": 11.9374794,
+   "longitude": 108.4484536
+  },
+  {
+   "ref": "node/12856898901",
+   "name": "Strawberry",
+   "latitude": 11.9748802,
+   "longitude": 108.436169
+  },
+  {
+   "ref": "node/12860518901",
+   "name": "Dalat Eden",
+   "latitude": 11.9725782,
+   "longitude": 108.4193993
+  },
+  {
+   "ref": "node/12880158622",
+   "name": "Cafe Thị trấn Nobi",
+   "latitude": 11.9477745,
+   "longitude": 108.4789434
+  },
+  {
+   "ref": "node/13026138101",
+   "name": "Le J' Cafe",
+   "latitude": 11.9423644,
+   "longitude": 108.451511
+  },
+  {
+   "ref": "node/13045059201",
+   "name": "Ty Crêpe",
+   "latitude": 11.9529468,
+   "longitude": 108.4400364
+  },
+  {
+   "ref": "node/13045102701",
+   "name": "Daily Log",
+   "latitude": 11.9524348,
+   "longitude": 108.437507
+  },
+  {
+   "ref": "node/13051507801",
+   "name": "MK",
+   "latitude": 11.9635664,
+   "longitude": 108.4262873
+  },
+  {
+   "ref": "node/13057470401",
+   "name": "Reo 20° Chill in Dalat",
+   "latitude": 11.888319,
+   "longitude": 108.4127615
+  },
+  {
+   "ref": "node/13059066401",
+   "name": "K.A. Coffee",
+   "latitude": 11.9550343,
+   "longitude": 108.4369878
+  },
+  {
+   "ref": "node/13061430502",
+   "name": "Triệu Đóa Hồng",
+   "latitude": 11.9485067,
+   "longitude": 108.4315829
+  },
+  {
+   "ref": "node/13061504401",
+   "name": "Proust",
+   "latitude": 11.9545369,
+   "longitude": 108.4357323
+  },
+  {
+   "ref": "node/13083664058",
+   "name": "Lá Thì Thầm",
+   "latitude": 11.9676579,
+   "longitude": 108.4392859
+  },
+  {
+   "ref": "node/13130267701",
+   "name": "Cochin Garden",
+   "latitude": 11.9626691,
+   "longitude": 108.4305487
+  },
+  {
+   "ref": "node/13420491001",
+   "name": "D'Lart Garden Drinking & Dining",
+   "latitude": 11.9334266,
+   "longitude": 108.4340366
+  },
+  {
+   "ref": "node/13423057901",
+   "name": "HOG Specialty Coffee",
+   "latitude": 11.9354171,
+   "longitude": 108.4299458
+  },
+  {
+   "ref": "node/13433671601",
+   "name": "Đômen",
+   "latitude": 11.9487895,
+   "longitude": 108.4306161
+  },
+  {
+   "ref": "node/13475744601",
+   "name": "Phuoc Coffee",
+   "latitude": 11.9402524,
+   "longitude": 108.4337279
+  },
+  {
+   "ref": "node/13478520201",
+   "name": "Gu Coffee",
+   "latitude": 11.9434102,
+   "longitude": 108.4356286
+  },
+  {
+   "ref": "node/13481357201",
+   "name": "Kafein Coffee",
+   "latitude": 11.9587136,
+   "longitude": 108.4278046
+  },
+  {
+   "ref": "node/13518499072",
+   "name": "Tay Mo Amateurs Cafe",
+   "latitude": 11.9054804,
+   "longitude": 108.4519705
+  },
+  {
+   "ref": "node/13543260601",
+   "name": "The Green Coffee",
+   "latitude": 11.9399588,
+   "longitude": 108.4288146
+  },
+  {
+   "ref": "node/13580576901",
+   "name": "Noir Café & Tea",
+   "latitude": 11.9316838,
+   "longitude": 108.4232073
+  },
+  {
+   "ref": "node/13590797502",
+   "name": "1998",
+   "latitude": 11.9516573,
+   "longitude": 108.4331715
+  },
+  {
+   "ref": "node/13590797510",
+   "name": "MAM",
+   "latitude": 11.9483745,
+   "longitude": 108.4371599
+  },
+  {
+   "ref": "node/13590797512",
+   "name": "Kimoch",
+   "latitude": 11.948978,
+   "longitude": 108.4391136
+  },
+  {
+   "ref": "node/13590799001",
+   "name": "Yen",
+   "latitude": 11.9504192,
+   "longitude": 108.4342582
+  },
+  {
+   "ref": "node/13590799005",
+   "name": "Phuc Long",
+   "latitude": 11.9436802,
+   "longitude": 108.4349119
+  },
+  {
+   "ref": "node/13590799103",
+   "name": "The Choco",
+   "latitude": 11.9434172,
+   "longitude": 108.4352738
+  },
+  {
+   "ref": "node/13590799503",
+   "name": "Mr To",
+   "latitude": 11.9462667,
+   "longitude": 108.434931
+  },
+  {
+   "ref": "node/13593115003",
+   "name": "Talus",
+   "latitude": 11.9528643,
+   "longitude": 108.4356741
+  },
+  {
+   "ref": "node/13593153109",
+   "name": "indigo",
+   "latitude": 11.9493025,
+   "longitude": 108.4389211
+  },
+  {
+   "ref": "node/13593153903",
+   "name": "Mint",
+   "latitude": 11.9525903,
+   "longitude": 108.4367365
+  },
+  {
+   "ref": "node/13625666303",
+   "name": "Bumbi",
+   "latitude": 11.9518384,
+   "longitude": 108.4391515
+  },
+  {
+   "ref": "node/13625676201",
+   "name": "Bin Bin",
+   "latitude": 11.951749,
+   "longitude": 108.4391756
+  },
+  {
+   "ref": "node/13647271401",
+   "name": "Cafe Nhà Gô",
+   "latitude": 11.9364162,
+   "longitude": 108.4330016
+  },
+  {
+   "ref": "node/13705756602",
+   "name": "MON Coffee",
+   "latitude": 11.9392192,
+   "longitude": 108.4251772
+  },
+  {
+   "ref": "node/13705981001",
+   "name": "Them Nha Co Hoa",
+   "latitude": 11.937439,
+   "longitude": 108.4240751
+  },
+  {
+   "ref": "node/13762467405",
+   "name": "Dalano",
+   "latitude": 11.9477934,
+   "longitude": 108.434336
+  },
+  {
+   "ref": "node/13762483701",
+   "name": "Milano Coffee",
+   "latitude": 11.9408207,
+   "longitude": 108.418268
+  },
+  {
+   "ref": "node/13765768502",
+   "name": "Thanh",
+   "latitude": 11.9380905,
+   "longitude": 108.4397418
+  },
+  {
+   "ref": "node/13765768503",
+   "name": "Enjoy",
+   "latitude": 11.9379747,
+   "longitude": 108.4397603
+  },
+  {
+   "ref": "node/13765768602",
+   "name": "Coffee 22",
+   "latitude": 11.9401257,
+   "longitude": 108.4322017
+  },
+  {
+   "ref": "node/13765768603",
+   "name": "Cafe trang",
+   "latitude": 11.9407841,
+   "longitude": 108.4313918
+  },
+  {
+   "ref": "node/13769050001",
+   "name": "HYM coffee",
+   "latitude": 11.9418379,
+   "longitude": 108.4313649
+  },
+  {
+   "ref": "node/13788702101",
+   "name": "Quite Art Coffee",
+   "latitude": 11.9443966,
+   "longitude": 108.4219146
+  },
+  {
+   "ref": "node/13788717401",
+   "name": "Nghiem Brewing",
+   "latitude": 11.943854,
+   "longitude": 108.4232468
+  },
+  {
+   "ref": "node/13788756701",
+   "name": "Nhà Tuê",
+   "latitude": 11.9443951,
+   "longitude": 108.4249894
+  },
+  {
+   "ref": "node/13789278303",
+   "name": "Dalat Vintage 1991",
+   "latitude": 11.9421199,
+   "longitude": 108.4225725
+  },
+  {
+   "ref": "node/13797626101",
+   "name": "Men Coffee",
+   "latitude": 11.9435381,
+   "longitude": 108.4514536
+  },
+  {
+   "ref": "node/13803599913",
+   "name": "Cu Lan coffe",
+   "latitude": 12.0266682,
+   "longitude": 108.3630295
+  },
+  {
+   "ref": "node/13805380101",
+   "name": "Oh! My Kids Coffee",
+   "latitude": 11.9356154,
+   "longitude": 108.4355234
+  },
+  {
+   "ref": "node/13805824401",
+   "name": "Nhặt Nắng Ca Phe & Mì Chay",
+   "latitude": 11.9392542,
+   "longitude": 108.4213485
+  },
+  {
+   "ref": "node/13807713202",
+   "name": "Tiêm Café Góc Nhỏ",
+   "latitude": 11.9410628,
+   "longitude": 108.4653675
+  },
+  {
+   "ref": "node/13808120401",
+   "name": "The Green Coffee",
+   "latitude": 11.9371379,
+   "longitude": 108.4270485
+  },
+  {
+   "ref": "node/13812649501",
+   "name": "Cà Phê Win",
+   "latitude": 11.9422648,
+   "longitude": 108.4506158
+  },
+  {
+   "ref": "node/13813274401",
+   "name": "Le Pin",
+   "latitude": 11.9314392,
+   "longitude": 108.4306335
+  },
+  {
+   "ref": "node/13816642601",
+   "name": "Café Sân Cát",
+   "latitude": 11.9467178,
+   "longitude": 108.478632
+  },
+  {
+   "ref": "node/13823405503",
+   "name": "Tiem Ca Phe & Banh Mi RÒM",
+   "latitude": 11.9550004,
+   "longitude": 108.4299997
+  },
+  {
+   "ref": "node/13826388301",
+   "name": "NÀO?",
+   "latitude": 11.941251,
+   "longitude": 108.4555907
+  },
+  {
+   "ref": "node/13827574801",
+   "name": "Cà Phê Xóm Ruộng",
+   "latitude": 11.9429084,
+   "longitude": 108.4580346
+  },
+  {
+   "ref": "node/13830385101",
+   "name": "Sau Dem Coffee",
+   "latitude": 11.9535297,
+   "longitude": 108.4615082
+  },
+  {
+   "ref": "node/13838610101",
+   "name": "Weekend - Cafe Tea Cake",
+   "latitude": 11.947446,
+   "longitude": 108.4564485
+  },
+  {
+   "ref": "node/13838617601",
+   "name": "Cà Fê Dồi Cù",
+   "latitude": 11.9430624,
+   "longitude": 108.4457042
+  },
+  {
+   "ref": "node/13838707901",
+   "name": "Cà Phê Pha Máy",
+   "latitude": 11.9487351,
+   "longitude": 108.4425425
+  },
+  {
+   "ref": "node/13843279001",
+   "name": "Hoang Gia",
+   "latitude": 11.9495659,
+   "longitude": 108.4319203
+  },
+  {
+   "ref": "node/13887373201",
+   "name": "TM Tea&Coffee",
+   "latitude": 11.9394203,
+   "longitude": 108.4318434
+  },
+  {
+   "ref": "node/13890323001",
+   "name": "Mọt Coffee & Books",
+   "latitude": 11.9465891,
+   "longitude": 108.4668015
+  },
+  {
+   "ref": "node/13895243201",
+   "name": "Mận",
+   "latitude": 11.9432968,
+   "longitude": 108.4583808
+  },
+  {
+   "ref": "node/13895378101",
+   "name": "Cafe10",
+   "latitude": 11.9477271,
+   "longitude": 108.4383465
+  },
+  {
+   "ref": "node/13895378201",
+   "name": "bean here",
+   "latitude": 11.9479061,
+   "longitude": 108.438549
+  },
+  {
+   "ref": "node/13895630601",
+   "name": "Tiệm Cà Phê Nhà Bên Đồi",
+   "latitude": 11.9378573,
+   "longitude": 108.4837377
+  },
+  {
+   "ref": "node/13906092801",
+   "name": "Chocolate Bear",
+   "latitude": 11.936707,
+   "longitude": 108.4637665
+  },
+  {
+   "ref": "node/13906434601",
+   "name": "Airdream Forest Station",
+   "latitude": 11.9424253,
+   "longitude": 108.4639356
+  },
+  {
+   "ref": "node/13914083602",
+   "name": "Ngộ Coffee",
+   "latitude": 11.9397656,
+   "longitude": 108.4475134
+  },
+  {
+   "ref": "node/13922104901",
+   "name": "Innokafe",
+   "latitude": 11.9272269,
+   "longitude": 108.4326819
+  },
+  {
+   "ref": "node/13981875068",
+   "name": "Coffee 84",
+   "latitude": 11.9397569,
+   "longitude": 108.4348033
+  },
+  {
+   "ref": "node/14004270361",
+   "name": "bình thường",
+   "latitude": 11.9382063,
+   "longitude": 108.4358983
+  },
+  {
+   "ref": "node/14045648591",
+   "name": "The Cloud Forest - Đà Lạt",
+   "latitude": 11.9785252,
+   "longitude": 108.4582426
+  },
+  {
+   "ref": "node/14107125801",
+   "name": "The Green Coffee",
+   "latitude": 11.9370404,
+   "longitude": 108.4337158
+  },
+  {
+   "ref": "node/14226003501",
+   "name": "Holeworker",
+   "latitude": 11.9361813,
+   "longitude": 108.4404095
+  },
+  {
+   "ref": "node/14226388301",
+   "name": "Lamb Coffee",
+   "latitude": 11.9396035,
+   "longitude": 108.4524896
+  },
+  {
+   "ref": "node/14255569836",
+   "name": "Vie Cafe",
+   "latitude": 11.9417005,
+   "longitude": 108.4234199
+  },
+  {
+   "ref": "node/14301547901",
+   "name": "Sam Cafe - Hồ Tuyền Lâm",
+   "latitude": 11.9005977,
+   "longitude": 108.4360759
+  },
+  {
+   "ref": "node/14304989225",
+   "name": "Lalapine",
+   "latitude": 11.944016,
+   "longitude": 108.4353368
+  },
+  {
+   "ref": "node/14305140754",
+   "name": "Hồng Trà Hòa Bình",
+   "latitude": 11.9425015,
+   "longitude": 108.4358374
+  },
+  {
+   "ref": "node/14379610601",
+   "name": "Socialhouse Dalat",
+   "latitude": 11.9467424,
+   "longitude": 108.4341848
+  },
+  {
+   "ref": "way/777438259",
+   "name": "Cafe Bồ Công Anh",
+   "latitude": 11.9409728,
+   "longitude": 108.4486613
+  },
+  {
+   "ref": "way/890246259",
+   "name": "Chuồn Chuồn Coffee & Bistro",
+   "latitude": 11.8890287,
+   "longitude": 108.3496415
+  },
+  {
+   "ref": "way/1238497367",
+   "name": "Weasel Coffee Farm",
+   "latitude": 11.9349003,
+   "longitude": 108.4672397
+  },
+  {
+   "ref": "way/1302653954",
+   "name": "Hoa Violet Cafe Restaurant",
+   "latitude": 11.9380447,
+   "longitude": 108.4537509
+  },
+  {
+   "ref": "way/1302656771",
+   "name": "Deer in the Forest",
+   "latitude": 11.9541714,
+   "longitude": 108.4612518
+  },
+  {
+   "ref": "way/1304439938",
+   "name": "JERA Egg Coffee",
+   "latitude": 11.9433344,
+   "longitude": 108.4346424
+  },
+  {
+   "ref": "way/1304439951",
+   "name": "Quán Đương",
+   "latitude": 11.9477088,
+   "longitude": 108.4320852
+  },
+  {
+   "ref": "way/1304439984",
+   "name": "Highlands Coffee",
+   "latitude": 11.94264,
+   "longitude": 108.4312213
+  },
+  {
+   "ref": "way/1307526067",
+   "name": "Thi Tuấn Coffee",
+   "latitude": 11.9432412,
+   "longitude": 108.4282877
+  },
+  {
+   "ref": "way/1308548095",
+   "name": "THƠM",
+   "latitude": 11.9236962,
+   "longitude": 108.4449048
+  },
+  {
+   "ref": "way/1308586853",
+   "name": "Bi Coffee",
+   "latitude": 11.9480703,
+   "longitude": 108.4335713
+  },
+  {
+   "ref": "way/1333099298",
+   "name": "Ruby Green Coffe Đà Lạt",
+   "latitude": 11.9565621,
+   "longitude": 108.4464541
+  },
+  {
+   "ref": "way/1356812884",
+   "name": "MC House",
+   "latitude": 11.9403354,
+   "longitude": 108.4505432
+  },
+  {
+   "ref": "way/1413498928",
+   "name": "Kien Coffee",
+   "latitude": 11.9688861,
+   "longitude": 108.4258673
+  },
+  {
+   "ref": "way/1413498929",
+   "name": "InnoKafe",
+   "latitude": 11.9593742,
+   "longitude": 108.4248611
+  },
+  {
+   "ref": "way/1504027119",
+   "name": "In The Pines Homestay & Coffee",
+   "latitude": 11.9586514,
+   "longitude": 108.4352688
+  },
+  {
+   "ref": "way/1534765331",
+   "name": "Lyn",
+   "latitude": 11.9380038,
+   "longitude": 108.435223
+  }
+ ]
+}

@@ -1,0 +1,4 @@
+# Du lieu rieng cua tung may khi chay seed (anh da len Cloudinary, id phu thuoc DB local)
+images/
+state.json
+report.md
