@@ -7,6 +7,10 @@
    lời mời, link chia sẻ, lịch sử thao tác (trip_activities), ảnh bìa (cover_images,
    trips.cover_image_url), users.username, posts.visibility/status.
 
+   MERGED 2026-11-27: module báo cáo / kiểm duyệt nội dung (ROLE_MODERATOR,
+   post_comments.status + moderated_*, place_reviews.moderated_*, reports.reason_code/
+   resolution + mỗi người báo cáo 1 lần / nội dung, bảng moderation_actions).
+
    WARNING:
    - THIS SCRIPT DROPS THE EXISTING DATABASE travel_platform_db COMPLETELY.
    - Export/backup the old database before running this file.
@@ -59,7 +63,7 @@ CREATE TABLE users (
     full_name VARCHAR(150) NOT NULL,
     avatar VARCHAR(1000) NULL,
     role VARCHAR(50) NOT NULL DEFAULT 'ROLE_TRAVELLER'
-        COMMENT 'ROLE_TRAVELLER, ROLE_PARTNER, ROLE_ADMIN',
+        COMMENT 'ROLE_TRAVELLER, ROLE_PARTNER, ROLE_MODERATOR, ROLE_ADMIN',
     status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE'
         COMMENT 'ACTIVE, LOCKED, DISABLED',
     reset_password_token VARCHAR(255) NULL,
@@ -71,7 +75,7 @@ CREATE TABLE users (
     UNIQUE KEY uq_users_phone (phone_number),
     UNIQUE KEY uq_users_reset_token (reset_password_token),
     KEY idx_users_role_status (role, status),
-    CONSTRAINT chk_users_role CHECK (role IN ('ROLE_TRAVELLER', 'ROLE_PARTNER', 'ROLE_ADMIN')),
+    CONSTRAINT chk_users_role CHECK (role IN ('ROLE_TRAVELLER', 'ROLE_PARTNER', 'ROLE_MODERATOR', 'ROLE_ADMIN')),
     CONSTRAINT chk_users_status CHECK (status IN ('ACTIVE', 'LOCKED', 'DISABLED'))
 ) ENGINE=InnoDB;
 
@@ -843,15 +847,24 @@ CREATE TABLE post_comments (
     user_id BIGINT NOT NULL,
     parent_id BIGINT NULL,
     content TEXT NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'PUBLISHED'
+        COMMENT 'PUBLISHED, HIDDEN',
+    moderated_by BIGINT NULL,
+    moderation_note VARCHAR(500) NULL,
+    moderated_at DATETIME NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     KEY idx_post_comments_post_time (post_id, created_at),
     KEY idx_post_comments_user (user_id),
     KEY idx_post_comments_parent (parent_id),
+    KEY idx_post_comments_post_status (post_id, status),
     CONSTRAINT fk_post_comments_post FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE,
     CONSTRAINT fk_post_comments_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-    CONSTRAINT fk_post_comments_parent FOREIGN KEY (parent_id) REFERENCES post_comments(id) ON DELETE CASCADE
+    CONSTRAINT fk_post_comments_parent FOREIGN KEY (parent_id) REFERENCES post_comments(id) ON DELETE CASCADE,
+    CONSTRAINT fk_post_comments_moderated_by
+        FOREIGN KEY (moderated_by) REFERENCES users(id) ON DELETE SET NULL,
+    CONSTRAINT chk_post_comments_status CHECK (status IN ('PUBLISHED', 'HIDDEN'))
 ) ENGINE=InnoDB;
 
 CREATE TABLE place_reviews (
@@ -863,6 +876,9 @@ CREATE TABLE place_reviews (
     content TEXT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'PUBLISHED'
         COMMENT 'PENDING, PUBLISHED, HIDDEN, REJECTED',
+    moderated_by BIGINT NULL,
+    moderation_note VARCHAR(500) NULL,
+    moderated_at DATETIME NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
@@ -871,6 +887,8 @@ CREATE TABLE place_reviews (
     KEY idx_place_reviews_user (user_id),
     CONSTRAINT fk_place_reviews_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     CONSTRAINT fk_place_reviews_place FOREIGN KEY (place_id) REFERENCES places(id) ON DELETE SET NULL,
+    CONSTRAINT fk_place_reviews_moderated_by
+        FOREIGN KEY (moderated_by) REFERENCES users(id) ON DELETE SET NULL,
     CONSTRAINT chk_place_review_rating CHECK (rating BETWEEN 1 AND 5),
     CONSTRAINT chk_place_review_status CHECK (status IN ('PENDING', 'PUBLISHED', 'HIDDEN', 'REJECTED'))
 ) ENGINE=InnoDB;
@@ -890,21 +908,54 @@ CREATE TABLE place_review_media (
 CREATE TABLE reports (
     id BIGINT NOT NULL AUTO_INCREMENT,
     reporter_id BIGINT NOT NULL,
-    target_type VARCHAR(50) NOT NULL COMMENT 'TRIP, COMMENT, ALERT, CUSTOM_PLACE, POST, BUSINESS',
+    target_type VARCHAR(50) NOT NULL
+        COMMENT 'POST, POST_COMMENT, PLACE_REVIEW (cũ: TRIP, COMMENT, ALERT, CUSTOM_PLACE, BUSINESS)',
     target_id BIGINT NOT NULL,
-    reason TEXT NOT NULL,
+    reason_code VARCHAR(30) NULL
+        COMMENT 'SPAM, HARASSMENT, SENSITIVE, MISINFORMATION, OTHER',
+    reason TEXT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING, RESOLVED, REJECTED',
+    resolution VARCHAR(20) NULL
+        COMMENT 'HIDDEN, DISMISSED',
     reviewed_by BIGINT NULL,
     reviewed_at DATETIME NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
+    UNIQUE KEY uq_reports_reporter_target (reporter_id, target_type, target_id),
     KEY idx_reports_status_time (status, created_at),
     KEY idx_reports_target (target_type, target_id),
     KEY idx_reports_reporter (reporter_id),
     KEY idx_reports_reviewer (reviewed_by),
+    KEY idx_reports_target_status (target_type, target_id, status),
     CONSTRAINT fk_reports_reporter FOREIGN KEY (reporter_id) REFERENCES users(id) ON DELETE CASCADE,
     CONSTRAINT fk_reports_reviewer FOREIGN KEY (reviewed_by) REFERENCES users(id) ON DELETE SET NULL,
-    CONSTRAINT chk_reports_status CHECK (status IN ('PENDING', 'RESOLVED', 'REJECTED'))
+    CONSTRAINT chk_reports_status CHECK (status IN ('PENDING', 'RESOLVED', 'REJECTED')),
+    CONSTRAINT chk_reports_reason_code
+        CHECK (reason_code IS NULL OR reason_code IN ('SPAM', 'HARASSMENT', 'SENSITIVE', 'MISINFORMATION', 'OTHER')),
+    CONSTRAINT chk_reports_resolution
+        CHECK (resolution IS NULL OR resolution IN ('HIDDEN', 'DISMISSED'))
+) ENGINE=InnoDB;
+
+-- Nhật ký kiểm duyệt: ẩn / khôi phục nội dung, bỏ qua báo cáo.
+CREATE TABLE moderation_actions (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    actor_id BIGINT NULL,
+    action VARCHAR(20) NOT NULL COMMENT 'HIDE, RESTORE, DISMISS',
+    target_type VARCHAR(50) NOT NULL COMMENT 'POST, POST_COMMENT, PLACE_REVIEW',
+    target_id BIGINT NOT NULL,
+    target_author_id BIGINT NULL,
+    reason VARCHAR(500) NULL,
+    report_count INT NOT NULL DEFAULT 0 COMMENT 'Số báo cáo được xử lý cùng thao tác này',
+    created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    PRIMARY KEY (id),
+    KEY idx_mod_actions_time (created_at),
+    KEY idx_mod_actions_target (target_type, target_id, created_at),
+    KEY idx_mod_actions_actor (actor_id, created_at),
+    KEY idx_mod_actions_author (target_author_id),
+    CONSTRAINT fk_mod_actions_actor FOREIGN KEY (actor_id) REFERENCES users(id) ON DELETE SET NULL,
+    CONSTRAINT fk_mod_actions_author FOREIGN KEY (target_author_id) REFERENCES users(id) ON DELETE SET NULL,
+    CONSTRAINT chk_mod_actions_action CHECK (action IN ('HIDE', 'RESTORE', 'DISMISS')),
+    CONSTRAINT chk_mod_actions_target_type CHECK (target_type IN ('POST', 'POST_COMMENT', 'PLACE_REVIEW'))
 ) ENGINE=InnoDB;
 
 -- Generic legacy media for trip/post/custom-place/alert objects.
