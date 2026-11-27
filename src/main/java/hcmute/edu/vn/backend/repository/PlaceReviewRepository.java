@@ -11,9 +11,17 @@ import java.util.List;
 import java.util.Optional;
 
 public interface PlaceReviewRepository extends JpaRepository<PlaceReview, Long> {
-    List<PlaceReview> findByLocationNameOrderByCreatedAtDesc(String locationName);
+    // Chỉ trả đánh giá đang hiển thị: đánh giá bị kiểm duyệt viên ẩn (HIDDEN) không lọt ra danh sách.
+    // Giữ nguyên tên hàm để mọi nơi đang gọi hàm này tự được lọc.
+    @Query("""
+            SELECT r
+            FROM PlaceReview r
+            WHERE r.locationName = :locationName AND r.status = 'PUBLISHED'
+            ORDER BY r.createdAt DESC, r.id DESC
+            """)
+    List<PlaceReview> findByLocationNameOrderByCreatedAtDesc(@Param("locationName") String locationName);
 
-    // Thêm dòng này để phục vụ logic: 1 User chỉ được đánh giá 1 lần tại 1 địa điểm
+    // 1 User chỉ được đánh giá 1 lần tại 1 địa điểm. KHÔNG lọc status: cần thấy cả đánh giá đã bị ẩn để chặn đăng lại.
     Optional<PlaceReview> findByLocationNameAndUserId(String locationName, Long userId);
 
     /**
@@ -23,7 +31,7 @@ public interface PlaceReviewRepository extends JpaRepository<PlaceReview, Long> 
     @Query("""
             SELECT r.locationName, AVG(r.rating), COUNT(r)
             FROM PlaceReview r
-            WHERE r.locationName IN :names AND r.rating IS NOT NULL
+            WHERE r.locationName IN :names AND r.rating IS NOT NULL AND r.status = 'PUBLISHED'
             GROUP BY r.locationName
             """)
     List<Object[]> aggregateRatingsByLocationNames(@Param("names") Collection<String> names);
@@ -36,7 +44,7 @@ public interface PlaceReviewRepository extends JpaRepository<PlaceReview, Long> 
             SELECT r.locationName, AVG(r.rating), COUNT(r),
                    SUM(CASE WHEN r.createdAt >= :since THEN 1 ELSE 0 END)
             FROM PlaceReview r
-            WHERE r.locationName IN :names
+            WHERE r.locationName IN :names AND r.status = 'PUBLISHED'
             GROUP BY r.locationName
             """)
     List<Object[]> activityByLocationNames(@Param("names") Collection<String> names,

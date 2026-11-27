@@ -121,7 +121,7 @@ public interface PostRepository extends JpaRepository<Post, Long> {
             WHERE u.username = :username
             AND p.status = 'PUBLISHED'
             AND (
-                (:isOwner = true AND p.moderationStatus IN ('PENDING', 'APPROVED', 'REJECTED'))
+                (:isOwner = true AND p.moderationStatus IN ('PENDING', 'APPROVED', 'REJECTED', 'HIDDEN'))
                 OR
                 (:isOwner = false AND p.moderationStatus = 'APPROVED' AND (
                     (p.visibility = 'PUBLIC') OR
@@ -146,7 +146,7 @@ public interface PostRepository extends JpaRepository<Post, Long> {
             AND p.id < :beforeId
             AND p.status = 'PUBLISHED'
             AND (
-                (:isOwner = true AND p.moderationStatus IN ('PENDING', 'APPROVED', 'REJECTED'))
+                (:isOwner = true AND p.moderationStatus IN ('PENDING', 'APPROVED', 'REJECTED', 'HIDDEN'))
                 OR
                 (:isOwner = false AND p.moderationStatus = 'APPROVED' AND (
                     (p.visibility = 'PUBLIC') OR

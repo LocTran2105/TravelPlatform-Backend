@@ -37,11 +37,19 @@ public interface PostStatsRepository extends Repository<Post, Long> {
     List<Long> findLikedPostIds(@Param("userId") Long userId,
                                 @Param("postIds") Collection<Long> postIds);
 
-    /** [postId, số bình luận] (tính cả trả lời). */
+    /**
+     * [postId, số bình luận] (tính cả trả lời).
+     * Không đếm bình luận bị ẩn, và không đếm trả lời nằm dưới bình luận gốc bị ẩn
+     * (khớp với danh sách CommentService trả về).
+     */
     @Query("""
             SELECT c.post.id, COUNT(c)
             FROM PostComment c
             WHERE c.post.id IN :postIds
+              AND c.status = 'PUBLISHED'
+              AND (c.parentId IS NULL OR NOT EXISTS (
+                    SELECT 1 FROM PostComment p
+                    WHERE p.id = c.parentId AND p.status = 'HIDDEN'))
             GROUP BY c.post.id
             """)
     List<Object[]> countCommentsByPostIds(@Param("postIds") Collection<Long> postIds);

@@ -164,6 +164,9 @@ public class PostService {
     ) {
         User user = requireActiveUser(email);
         Post post = requireOwnedPublishedPost(user, postId, "chỉnh sửa");
+        if ("HIDDEN".equals(post.getModerationStatus())) {
+            throw new IllegalStateException("Bài viết đã bị kiểm duyệt viên ẩn nên không thể chỉnh sửa. Bạn vẫn có thể xóa bài.");
+        }
 
         if (caption != null) {
             post.setCaption(caption.trim());
@@ -391,6 +394,14 @@ public class PostService {
             dto.setAuthorUsername(author.getUsername());
             dto.setAuthorAvatar(author.getAvatar());
             dto.setVisibility(post.getVisibility());
+
+            // Chỉ tác giả mới biết bài của mình bị ẩn và lý do.
+            if (currentUser != null && currentUser.getId().equals(author.getId())) {
+                dto.setModerationStatus(post.getModerationStatus());
+                if ("HIDDEN".equals(post.getModerationStatus())) {
+                    dto.setModerationNote(post.getModerationNote());
+                }
+            }
 
             Relation relation = resolveRelation(currentUser, author, relationCache);
             dto.setFollowedByMe(relation.followedByMe());

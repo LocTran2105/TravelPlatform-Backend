@@ -1,5 +1,6 @@
 package hcmute.edu.vn.backend.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
@@ -35,6 +36,21 @@ public class PostComment {
     // Nội dung bình luận
     @Column(columnDefinition = "TEXT", nullable = false)
     private String content;
+
+    // Kiểm duyệt: PUBLISHED (hiển thị) hoặc HIDDEN (bị kiểm duyệt viên ẩn)
+    @Column(name = "status", nullable = false, length = 20)
+    private String status = "PUBLISHED";
+
+    @JsonIgnore
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "moderated_by")
+    private User moderatedBy;
+
+    @Column(name = "moderation_note", length = 500)
+    private String moderationNote;
+
+    @Column(name = "moderated_at")
+    private LocalDateTime moderatedAt;
 
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)

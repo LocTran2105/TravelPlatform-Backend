@@ -68,6 +68,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/users/profile").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/users/*").permitAll()
                         .requestMatchers("/api/admin/**").hasAuthority("ROLE_ADMIN")
+                        // Kiểm duyệt nội dung: kiểm duyệt viên và quản trị viên
+                        .requestMatchers("/api/moderation/**").hasAnyAuthority("ROLE_MODERATOR", "ROLE_ADMIN")
                         .requestMatchers("/api/partner/**").hasAuthority("ROLE_PARTNER")
                         // /api/partner-applications/** không nằm trong matcher ROLE_PARTNER:
                         // traveller đã đăng nhập được phép gửi đơn đăng ký đối tác.

@@ -43,6 +43,12 @@ public class PlaceReviewService {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new Exception("Không tìm thấy người dùng!"));
 
+        // 0. Đánh giá đã bị kiểm duyệt viên ẩn thì không sửa / đăng lại (kiểm tra TRƯỚC khi upload file)
+        Optional<PlaceReview> existingReview = placeReviewRepository.findByLocationNameAndUserId(locationName, user.getId());
+        if (existingReview.isPresent() && "HIDDEN".equals(existingReview.get().getStatus())) {
+            throw new Exception("Đánh giá của bạn tại địa điểm này đã bị kiểm duyệt viên ẩn nên không thể chỉnh sửa hoặc đăng lại.");
+        }
+
         // 1. Kiểm tra + upload file TRƯỚC khi ghi DB: nếu lỗi thì không có gì bị lưu dở
         List<MultipartFile> validFiles = files == null ? List.of()
                 : files.stream().filter(f -> f != null && !f.isEmpty()).toList();
@@ -52,8 +58,7 @@ public class PlaceReviewService {
             uploaded.add(uploadToCloudinary(file));
         }
 
-        // 2. Tìm xem user này đã đánh giá địa điểm này chưa
-        Optional<PlaceReview> existingReview = placeReviewRepository.findByLocationNameAndUserId(locationName, user.getId());
+        // 2. Đã đánh giá địa điểm này chưa (existingReview ở bước 0)
         PlaceReview review;
 
         if (existingReview.isPresent()) {
@@ -129,6 +134,13 @@ public class PlaceReviewService {
             likeRepository.delete(existingLike.get());
             return "UNLIKED";
         } else {
+            // Chỉ cho thả tim đánh giá đang hiển thị (bỏ tim thì luôn được)
+            boolean visible = placeReviewRepository.findById(reviewId)
+                    .map(r -> "PUBLISHED".equals(r.getStatus()))
+                    .orElse(false);
+            if (!visible) {
+                throw new Exception("Không tìm thấy đánh giá!");
+            }
             UserLike newLike = new UserLike();
             newLike.setUser(user);
             newLike.setTargetType("REVIEW");

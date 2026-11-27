@@ -12,15 +12,11 @@ import hcmute.edu.vn.backend.repository.UserRepository;
 import hcmute.edu.vn.backend.security.JwtUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.ResponseEntity;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDateTime;
 import java.util.Collections;
@@ -29,6 +25,8 @@ import java.util.UUID;
 
 @Service // Đánh dấu đây là tầng Service
 public class AuthService {
+
+    private static final int SAVE_ATTEMPTS = 5;
 
     @Autowired
     private UserRepository userRepository;
@@ -62,33 +60,8 @@ public class AuthService {
         user.setRole("ROLE_TRAVELLER");
         user.setStatus("ACTIVE");
 
-        // --- BỔ SUNG: LOGIC TẠO USERNAME TỰ ĐỘNG ---
-        // 1. Lấy phần trước @ của email, chuyển chữ thường, loại bỏ ký tự lạ
-        String baseUsername = signUpRequest.getEmail().split("@")[0]
-                .toLowerCase()
-                .replaceAll("[^a-z0-9._-]", "");
-
-        // 2. Rút gọn tối đa 7 ký tự để chừa chỗ ghép thêm số (vì DB cho max 10)
-        if (baseUsername.length() > 7) {
-            baseUsername = baseUsername.substring(0, 7);
-        }
-        // DB yêu cầu tối thiểu 3 ký tự
-        if (baseUsername.length() < 3) {
-            baseUsername = baseUsername + "123";
-        }
-
-        // 3. Kiểm tra trùng lặp, nếu trùng thì cộng thêm số (vd: loc, loc1, loc2)
-        String finalUsername = baseUsername;
-        int counter = 1;
-        while (userRepository.existsByUsername(finalUsername)) {
-            finalUsername = baseUsername + counter;
-            counter++;
-        }
-
-        user.setUsername(finalUsername);
-        // ------------------------------------------
-
-        userRepository.save(user);
+        // Username tự tạo từ email (đăng ký thường và đăng nhập Google dùng chung một hàm)
+        saveWithUniqueUsername(user);
     }
 
     // Logic Đăng nhập
@@ -105,9 +78,7 @@ public class AuthService {
             throw new Exception("Mật khẩu không chính xác!");
         }
 
-        if ("LOCKED".equals(user.getStatus())) {
-            throw new Exception("Tài khoản của bạn đã bị khóa!");
-        }
+        assertAccountUsable(user);
 
         String jwtToken = jwtUtils.generateJwtTokenFromEmail(user.getEmail());
 
@@ -140,12 +111,18 @@ public class AuthService {
         if (user == null) {
             user = new User();
             user.setEmail(email);
-            user.setFullName(name);
+            // full_name NOT NULL: Google không trả tên thì lấy phần trước @ của email
+            user.setFullName(name != null && !name.isBlank() ? name.trim() : email.split("@")[0]);
             user.setRole("ROLE_TRAVELLER");
+            user.setStatus("ACTIVE");
             user.setPasswordHash(passwordEncoder.encode(java.util.UUID.randomUUID().toString()));
             // Xử lý tạm số điện thoại để không bị lỗi null
             user.setPhoneNumber(String.valueOf(System.currentTimeMillis()).substring(3));
-            userRepository.save(user);
+            // username NOT NULL: lấy từ email Google (trước đây thiếu nên không tạo được tài khoản mới)
+            user = saveWithUniqueUsername(user);
+        } else {
+            // Tài khoản đã có: Google cũng phải tuân thủ trạng thái khóa / ngừng hoạt động
+            assertAccountUsable(user);
         }
 
         String jwt = jwtUtils.generateJwtTokenFromEmail(user.getEmail());
@@ -200,5 +177,47 @@ public class AuthService {
         user.setResetPasswordToken(null);
         user.setTokenExpiryDate(null);
         userRepository.save(user);
+    }
+
+    // ------------------------------------------------------------------
+    // HỖ TRỢ
+    // ------------------------------------------------------------------
+
+    /** Chỉ tài khoản ACTIVE mới được đăng nhập (khớp với AuthTokenFilter). */
+    private void assertAccountUsable(User user) throws Exception {
+        String status = user.getStatus();
+        if ("ACTIVE".equalsIgnoreCase(status)) {
+            return;
+        }
+        if ("LOCKED".equalsIgnoreCase(status)) {
+            throw new Exception("Tài khoản của bạn đã bị khóa!");
+        }
+        if ("DISABLED".equalsIgnoreCase(status)) {
+            throw new Exception("Tài khoản của bạn đã ngừng hoạt động!");
+        }
+        throw new Exception("Tài khoản hiện không hoạt động!");
+    }
+
+    /**
+     * Lưu user mới kèm username tạo từ email. Nếu hai người đăng ký cùng lúc và trùng username
+     * (UNIQUE chặn ở DB) thì chọn lại username khác rồi thử tiếp.
+     */
+    private User saveWithUniqueUsername(User user) throws Exception {
+        for (int attempt = 0; attempt < SAVE_ATTEMPTS; attempt++) {
+            String username = UsernameGenerator.unique(user.getEmail(), userRepository::existsByUsername);
+            if (username == null) {
+                throw new Exception("Không thể tạo tên người dùng, vui lòng thử lại!");
+            }
+            user.setUsername(username);
+            try {
+                return userRepository.save(user);
+            } catch (DataIntegrityViolationException e) {
+                if (userRepository.existsByEmail(user.getEmail())) {
+                    throw new Exception("Email đã được sử dụng!");
+                }
+                // còn lại: trùng username do đăng ký đồng thời -> vòng sau chọn lại
+            }
+        }
+        throw new Exception("Không thể tạo tên người dùng, vui lòng thử lại!");
     }
 }

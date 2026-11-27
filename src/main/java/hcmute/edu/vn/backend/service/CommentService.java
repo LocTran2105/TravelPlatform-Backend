@@ -43,6 +43,9 @@ public class CommentService {
         User user = requireActiveUser(email);
         // 404 nếu bài không tồn tại, đã xóa, hoặc người này không có quyền xem.
         Post post = postAccessService.requireViewablePost(postId, user);
+        if ("HIDDEN".equals(post.getModerationStatus())) {
+            throw new IllegalStateException("Bài viết đã bị ẩn nên không thể bình luận.");
+        }
 
         String content = validateContent(request.getContent());
 
@@ -67,6 +70,9 @@ public class CommentService {
 
         if (!comment.getUser().getId().equals(user.getId())) {
             throw new AccessDeniedException("Bạn chỉ có quyền sửa bình luận của chính mình.");
+        }
+        if ("HIDDEN".equals(comment.getStatus())) {
+            throw new IllegalStateException("Bình luận đã bị kiểm duyệt viên ẩn nên không thể chỉnh sửa.");
         }
         // Bài đã xóa / không còn xem được thì không sửa nữa.
         Post post = postAccessService.requireViewablePost(comment.getPost().getId(), user);
@@ -120,10 +126,11 @@ public class CommentService {
             byId.put(c.getId(), c);
         }
 
-        // Lượt 1: bình luận gốc (giữ thứ tự cũ -> mới).
+        // Lượt 1: bình luận gốc (giữ thứ tự cũ -> mới). Gốc bị ẩn thì cả nhánh trả lời cũng không hiện
+        // (byId vẫn chứa bình luận bị ẩn để tìm đúng gốc).
         Map<Long, CommentResponse> roots = new LinkedHashMap<>();
         for (PostComment c : all) {
-            if (resolveRootId(c, byId) == c.getId()) {
+            if (resolveRootId(c, byId) == c.getId() && isVisible(c)) {
                 roots.put(c.getId(), toResponse(c, viewer, postOwnerId, null));
             }
         }
@@ -132,7 +139,7 @@ public class CommentService {
         // trả lời lồng 3 cấp: trước đây bị mất khỏi giao diện, giờ gom về gốc).
         for (PostComment c : all) {
             long rootId = resolveRootId(c, byId);
-            if (rootId == c.getId()) continue;
+            if (rootId == c.getId() || !isVisible(c)) continue;
             CommentResponse root = roots.get(rootId);
             if (root != null) {
                 root.getReplies().add(toResponse(c, viewer, postOwnerId, rootId));
@@ -145,6 +152,10 @@ public class CommentService {
     // =====================================================================
     // HELPER
     // =====================================================================
+
+    private boolean isVisible(PostComment comment) {
+        return !"HIDDEN".equals(comment.getStatus());
+    }
 
     private User findUserOrNull(String email) {
         if (email == null || email.isBlank()) return null;
@@ -189,6 +200,9 @@ public class CommentService {
                 .orElseThrow(() -> new IllegalArgumentException("Bình luận được trả lời không tồn tại."));
         if (!parent.getPost().getId().equals(post.getId())) {
             throw new IllegalArgumentException("Bình luận được trả lời không thuộc bài viết này.");
+        }
+        if ("HIDDEN".equals(parent.getStatus())) {
+            throw new IllegalArgumentException("Bình luận được trả lời không còn hiển thị.");
         }
 
         // Đi ngược lên bình luận gốc (dữ liệu cũ có thể đã lồng nhiều cấp).

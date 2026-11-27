@@ -1,5 +1,6 @@
 package hcmute.edu.vn.backend.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.*;
@@ -28,4 +29,20 @@ public class PlaceReview {
 
     @Column(name = "created_at", insertable = false, updatable = false)
     private LocalDateTime createdAt;
+
+    // Kiểm duyệt: PUBLISHED (mặc định) hoặc HIDDEN (bị kiểm duyệt viên ẩn).
+    // Cột status của bảng đã có sẵn (PENDING, PUBLISHED, HIDDEN, REJECTED).
+    @Column(name = "status", nullable = false, length = 20)
+    private String status = "PUBLISHED";
+
+    @JsonIgnore
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "moderated_by")
+    private User moderatedBy;
+
+    @Column(name = "moderation_note", length = 500)
+    private String moderationNote;
+
+    @Column(name = "moderated_at")
+    private LocalDateTime moderatedAt;
 }
