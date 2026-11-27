@@ -5,7 +5,8 @@
     "province": "Lâm Đồng",
     "businessType": "CAFE",
     "priceLevel": 2,
-    "emailDomain": "example.com"
+    "emailDomain": "example.com",
+    "demoSeries": "00"
   },
   "cafes": [
     {

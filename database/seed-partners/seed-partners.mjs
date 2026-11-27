@@ -22,7 +22,7 @@
  */
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { dirname, extname, join, resolve } from 'node:path';
+import { basename, dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -39,8 +39,8 @@ const ONLY = typeof args.only === 'string' ? new Set(args.only.split(',').map((s
 const DATA_FILE = resolve(HERE, typeof args.data === 'string' ? args.data : 'cafes-dalat.json');
 const STATE_FILE = join(HERE, 'state.json');
 const REPORT_FILE = join(HERE, 'report.md');
-// Written by --dry-run; used when the backend cannot reach Overpass during approval
-const OSM_CACHE_FILE = join(HERE, 'osm-cafes-cache.json');
+// Written by --dry-run (one per data file); used when the backend cannot reach Overpass during approval
+const OSM_CACHE_FILE = join(HERE, `osm-cache-${basename(DATA_FILE, '.json')}.json`);
 const IMAGES_DIR = join(HERE, 'images'); // images/<key>/1.jpg, 2.jpg ... (first one becomes the cover)
 
 const API_BASE = (process.env.API_BASE || 'http://localhost:8080').replace(/\/$/, '');
@@ -54,6 +54,8 @@ const DALAT_BOX = { minLat: 11.8, maxLat: 12.1, minLng: 108.3, maxLng: 108.6 };
 const TAX_RE = /^(\d{10}(-\d{3})?|\d{12})$/;
 const PHONE_RE = /^(0|\+84)\d{9,10}$/;
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+// Allowed by both the Java validator and the SQL CHECK constraint on partner_businesses.business_type
+const SAFE_BUSINESS_TYPES = ['CAFE', 'RESTAURANT', 'HOTEL', 'HOMESTAY', 'RESORT', 'ATTRACTION', 'OTHER'];
 
 // ---------------------------------------------------------------- helpers
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -66,7 +68,7 @@ function normalizeName(s) {
     .replace(/đ/gi, 'd')
     .toLowerCase()
     .replace(/[^a-z0-9 ]+/g, ' ')
-    .replace(/\b(tiem|quan|ca phe|caphe|cafe|cafe|coffee|coffe|the|da lat|dalat)\b/g, ' ')
+    .replace(/\b(tiem|quan an|quan|ca phe|caphe|cafe|coffee|coffe|nha hang|restaurant|khach san|hotel|homestay|resort|the|da lat|dalat)\b/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -95,10 +97,13 @@ const osmLink = (c) => `https://www.openstreetmap.org/?mlat=${c.latitude}&mlon=$
 // ---------------------------------------------------------------- data
 function buildRecords(data) {
   const d = data.defaults || {};
-  return data.cafes.map((c, i) => {
+  // demoSeries (2 digits) keeps demo tax codes / phones unique across data files:
+  // series "00" -> 58000001NN / 0900000 1NN, series "01" -> 58010001NN / 0900010 1NN ...
+  const series = String(d.demoSeries ?? '00');
+  return (data.places || data.cafes).map((c, i) => {
     const nn = String(i + 1).padStart(2, '0');
     const email = `${c.key}@${d.emailDomain || 'example.com'}`;
-    const demoPhone = `09000001${nn}`;
+    const demoPhone = c.contactPhone || `0900${series}01${nn}`;
     const city = c.city || d.city;
     const province = c.province || d.province;
     const fullAddress = [c.address, c.ward, city, province].filter(Boolean).join(', ');
@@ -111,7 +116,7 @@ function buildRecords(data) {
       application: {
         displayName: c.name,
         legalName: `Hộ kinh doanh ${c.name} (dữ liệu demo)`,
-        taxCode: c.taxCode || `58000001${nn}`,
+        taxCode: c.taxCode || `58${series}0001${nn}`,
         businessAddress: fullAddress,
         contactPerson: `Đại diện ${c.name}`,
         contactPhone: demoPhone,
@@ -153,6 +158,7 @@ function buildRecords(data) {
 function validate(records) {
   const errors = [];
   const seen = { email: new Set(), tax: new Set(), key: new Set() };
+  const box = records.bbox || DALAT_BOX;
   for (const r of records) {
     const e = (m) => errors.push(`[${r.key}] ${m}`);
     if (!/^[a-z0-9]{3,9}$/.test(r.key)) e('key phải là chữ thường/số, 3-9 ký tự (dùng làm username email)');
@@ -166,8 +172,10 @@ function validate(records) {
     if (!PHONE_RE.test(r.application.contactPhone)) e(`contactPhone sai định dạng: ${r.application.contactPhone}`);
     const { latitude: lat, longitude: lng } = r;
     if (typeof lat !== 'number' || typeof lng !== 'number') e('latitude/longitude phải là số');
-    else if (lat < DALAT_BOX.minLat || lat > DALAT_BOX.maxLat || lng < DALAT_BOX.minLng || lng > DALAT_BOX.maxLng)
-      e(`tọa độ ${lat},${lng} nằm ngoài vùng Đà Lạt`);
+    else if (lat < box.minLat || lat > box.maxLat || lng < box.minLng || lng > box.maxLng)
+      e(`tọa độ ${lat},${lng} nằm ngoài vùng cho phép (defaults.bbox)`);
+    if (!SAFE_BUSINESS_TYPES.includes(r.business.businessType))
+      e(`businessType "${r.business.businessType}" không hợp lệ, chỉ dùng: ${SAFE_BUSINESS_TYPES.join(', ')}`);
     const { open, close } = r.hours || {};
     if (!TIME_RE.test(open || '') || !TIME_RE.test(close || '')) e('hours.open/close phải dạng HH:mm');
     else if (close <= open) e('giờ đóng cửa phải sau giờ mở cửa (backend không hỗ trợ qua đêm)');
@@ -178,12 +186,51 @@ function validate(records) {
 }
 
 // ---------------------------------------------------------------- OSM check (dry run, public Overpass)
-async function fetchOsmCafes(records) {
+// Same OSM tags the backend uses (OsmPlaceDiscoveryService.buildOverpassQuery / matchesOsmCategory)
+const OSM_SELECTORS = {
+  CAFE: ['["amenity"="cafe"]'],
+  RESTAURANT: ['["amenity"~"^(restaurant|food_court|fast_food|bbq)$"]'],
+  ACCOMMODATION: ['["tourism"~"^(hotel|guest_house|hostel|chalet|resort|motel|apartment)$"]'],
+  ATTRACTION: [
+    '["tourism"~"^(attraction|viewpoint|museum|theme_park|gallery|zoo|aquarium|artwork)$"]',
+    '["attraction"]',
+    '["historic"~"^(monument|memorial|castle|ruins|archaeological_site)$"]',
+    '["leisure"~"^(park|garden|nature_reserve)$"]',
+    '["natural"~"^(waterfall|peak|cave|beach|hot_spring)$"]',
+  ],
+};
+
+/** businessType -> backend place category; null = backend does not search OSM for this type. */
+function osmCategory(businessType) {
+  switch (String(businessType || '').toUpperCase()) {
+    case 'CAFE': case 'COFFEE_SHOP': return 'CAFE';
+    case 'RESTAURANT': case 'EATERY': return 'RESTAURANT';
+    case 'HOTEL': case 'HOMESTAY': case 'RESORT': case 'HOSTEL': case 'APARTMENT': return 'ACCOMMODATION';
+    case 'ATTRACTION': case 'TOURIST_SITE': return 'ATTRACTION';
+    default: return null;
+  }
+}
+
+function tagCategory(t = {}) {
+  const amenity = t.amenity || '';
+  if (amenity === 'cafe') return 'CAFE';
+  if (['restaurant', 'food_court', 'fast_food', 'bbq'].includes(amenity)) return 'RESTAURANT';
+  if (['hotel', 'guest_house', 'hostel', 'chalet', 'resort', 'motel', 'apartment'].includes(t.tourism)) return 'ACCOMMODATION';
+  if (['attraction', 'viewpoint', 'museum', 'theme_park', 'gallery', 'zoo', 'aquarium', 'artwork'].includes(t.tourism)
+    || t.attraction || t.historic || ['park', 'garden', 'nature_reserve'].includes(t.leisure)
+    || ['waterfall', 'peak', 'cave', 'beach', 'hot_spring'].includes(t.natural)) return 'ATTRACTION';
+  return null;
+}
+
+async function fetchOsmPlaces(records) {
   const lats = records.map((r) => r.latitude);
   const lngs = records.map((r) => r.longitude);
   const pad = 0.01;
   const bbox = [Math.min(...lats) - pad, Math.min(...lngs) - pad, Math.max(...lats) + pad, Math.max(...lngs) + pad].join(',');
-  const q = `[out:json][timeout:60];(nwr["amenity"="cafe"]["name"](${bbox}););out center tags;`;
+  const categories = [...new Set(records.map((r) => osmCategory(r.business.businessType)).filter(Boolean))];
+  if (!categories.length) return [];
+  const selectors = categories.flatMap((c) => OSM_SELECTORS[c]).map((sel) => `nwr${sel}["name"](${bbox});`).join('');
+  const q = `[out:json][timeout:90];(${selectors});out center tags;`;
   let json;
   for (let attempt = 1; ; attempt++) {
     try {
@@ -205,13 +252,17 @@ async function fetchOsmCafes(records) {
   return json.elements.map((el) => ({
     ref: `${el.type}/${el.id}`,
     name: el.tags.name,
+    category: tagCategory(el.tags),
     latitude: el.lat ?? el.center?.lat,
     longitude: el.lon ?? el.center?.lon,
   }));
 }
 
-function compareWithOsm(record, osmCafes) {
-  const withDist = osmCafes
+function compareWithOsm(record, osmPlaces) {
+  const category = osmCategory(record.business.businessType);
+  const withDist = osmPlaces
+    // entries without a category come from the old cafe-only cache
+    .filter((o) => category && (o.category || 'CAFE') === category)
     .map((o) => ({ ...o, distanceMeters: distanceMeters(record.latitude, record.longitude, o.latitude, o.longitude) }))
     .sort((a, b) => a.distanceMeters - b.distanceMeters);
   const nameMatch = withDist.find((o) => namesMatch(record.name, o.name));
@@ -317,12 +368,36 @@ async function ensureBusiness(r, partnerToken, state) {
       await api('add note', 'POST', `/api/partner/businesses/${biz.id}/notes`, { token: partnerToken, body: note });
     }
     log(r.key, `đã cập nhật giờ mở cửa ${r.hours.open}-${r.hours.close} và ${r.notes.length} ghi chú`);
+    // Images already in images/<key>/ go in before the first submit, so the admin reviews only once.
+    await uploadNewImages(r, partnerToken, biz.id, state);
 
     const sub = await api('submit', 'POST', `/api/partner/businesses/${biz.id}/submit`, { token: partnerToken });
     state.submissionId = sub.id;
     log(r.key, `đã gửi xét duyệt, submission #${sub.id}`);
   }
   return vs;
+}
+
+/** Upload files from images/<key>/ that were not uploaded before; first image becomes the cover. */
+async function uploadNewImages(r, token, businessId, state) {
+  state.media ||= {};
+  const newFiles = (await listImages(r.key)).filter((f) => !state.media[f.name]);
+  if (!newFiles.length) return 0;
+  const existing = asList(await api('get media', 'GET', `/api/partner/businesses/${businessId}/media`, { token }));
+  let order = existing.length;
+  let needCover = !existing.some((m) => m.cover);
+  for (const f of newFiles) {
+    const url = await uploadImage(f, token);
+    await api('add media', 'POST', `/api/partner/businesses/${businessId}/media`, {
+      token,
+      body: { mediaType: 'IMAGE', mediaUrl: url, thumbnailUrl: null, caption: `${r.name} – ảnh ${order + 1}`, cover: needCover, sortOrder: order },
+    });
+    state.media[f.name] = url;
+    log(r.key, `đã tải ${f.name}${needCover ? ' (ảnh bìa)' : ''}`);
+    needCover = false;
+    order += 1;
+  }
+  return newFiles.length;
 }
 
 async function getOsmCandidates(submissionId, key) {
@@ -364,7 +439,7 @@ async function ensurePlaceApproval(r, adminToken, state) {
       return;
     }
     const cache = JSON.parse(await readFile(OSM_CACHE_FILE, 'utf8'));
-    const { nameMatch } = compareWithOsm(r, cache.cafes);
+    const { nameMatch } = compareWithOsm(r, cache.places || cache.cafes);
     if (nameMatch && nameMatch.distanceMeters <= MATCH_MAX_METERS) {
       state.decision = `PENDING (OSM có "${nameMatch.name}" cách ${nameMatch.distanceMeters} m – chạy lại khi Overpass ổn để liên kết)`;
       log(r.key, state.decision);
@@ -466,20 +541,7 @@ async function addImagesFor(r, adminToken, state) {
 
   if (newFiles.length) {
     if (vs === 'PENDING_REVIEW') return 'BỎ QUA (đang chờ duyệt, không thêm ảnh được – duyệt xong rồi chạy lại)';
-    const existing = asList(await api('get media', 'GET', `/api/partner/businesses/${state.businessId}/media`, { token: partner.token }));
-    let order = existing.length;
-    let needCover = !existing.some((m) => m.cover);
-    for (const f of newFiles) {
-      const url = await uploadImage(f, partner.token);
-      await api('add media', 'POST', `/api/partner/businesses/${state.businessId}/media`, {
-        token: partner.token,
-        body: { mediaType: 'IMAGE', mediaUrl: url, thumbnailUrl: null, caption: `${r.name} – ảnh ${order + 1}`, cover: needCover, sortOrder: order },
-      });
-      state.media[f.name] = url;
-      log(r.key, `đã tải ${f.name}${needCover ? ' (ảnh bìa)' : ''}`);
-      needCover = false;
-      order += 1;
-    }
+    await uploadNewImages(r, partner.token, state.businessId, state);
     biz = await api('get business', 'GET', `/api/partner/businesses/${state.businessId}`, { token: partner.token });
   } else if (vs === 'APPROVED') {
     return files.length ? 'Không có ảnh mới' : `Chưa có ảnh trong images/${r.key}/`;
@@ -539,19 +601,20 @@ async function main() {
   const data = JSON.parse(await readFile(DATA_FILE, 'utf8'));
   const records = buildRecords(data).filter((r) => !ONLY || ONLY.has(r.key));
   if (!records.length) throw new Error('Không có bản ghi nào để chạy (kiểm tra --only).');
+  if (data.defaults?.bbox) records.bbox = data.defaults.bbox; // [minLat,maxLat,minLng,maxLng] as object
 
   const errors = validate(records);
   if (errors.length) {
     console.error('Dữ liệu không hợp lệ:\n' + errors.join('\n'));
     process.exit(1);
   }
-  console.log(`Dữ liệu hợp lệ: ${records.length} quán.`);
+  console.log(`Dữ liệu hợp lệ: ${records.length} địa điểm.`);
   for (const r of records.filter((x) => x.reviewNeeded)) console.warn(`[${r.key}] CẦN KIỂM TRA: ${r.reviewNeeded}`);
 
   if (DRY_RUN) {
-    console.log('Đang tải quán cà phê từ OpenStreetMap để đối chiếu...');
-    const osm = await fetchOsmCafes(records);
-    await writeFile(OSM_CACHE_FILE, JSON.stringify({ fetchedAt: new Date().toISOString(), cafes: osm }, null, 1), 'utf8');
+    console.log('Đang tải địa điểm từ OpenStreetMap để đối chiếu...');
+    const osm = await fetchOsmPlaces(records);
+    await writeFile(OSM_CACHE_FILE, JSON.stringify({ fetchedAt: new Date().toISOString(), places: osm }, null, 1), 'utf8');
     const rows = records.map((r) => {
       const { nameMatch, nearest } = compareWithOsm(r, osm);
       const ok = nameMatch && nameMatch.distanceMeters <= MATCH_MAX_METERS;
@@ -561,7 +624,7 @@ async function main() {
         result: ok
           ? 'Sẽ liên kết OSM'
           : nameMatch
-            ? `Trùng tên quán OSM cách ${nameMatch.distanceMeters} m (chi nhánh khác?) -> tạo PARTNER`
+            ? `Trùng tên địa điểm OSM cách ${nameMatch.distanceMeters} m (chi nhánh khác?) -> tạo PARTNER`
             : 'Không có trên OSM -> tạo PARTNER',
         osm: nameMatch ? `${nameMatch.ref} "${nameMatch.name}"` : nearest ? `(gần nhất: "${nearest.name}" ${nearest.distanceMeters} m)` : '',
         distance: nameMatch?.distanceMeters,
