@@ -33,6 +33,7 @@ public class CommentService {
     private final PostCommentRepository postCommentRepository;
     private final UserRepository userRepository;
     private final PostAccessService postAccessService;
+    private final NotificationEvents notificationEvents;
 
     // =====================================================================
     // THÊM
@@ -56,6 +57,8 @@ public class CommentService {
         comment.setParentId(resolveParentId(request.getParentId(), post));
 
         PostComment saved = postCommentRepository.save(comment);
+        // Báo cho chủ bài / người được trả lời (gửi sau khi commit, lỗi thông báo không ảnh hưởng bình luận).
+        notificationEvents.onCommentCreated(saved.getId());
         return toResponse(saved, user, post.getUser().getId(), saved.getParentId());
     }
 

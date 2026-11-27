@@ -47,6 +47,7 @@ public class ModerationService {
     private final ModerationActionRepository actionRepository;
     private final UserRepository userRepository;
     private final ModerationTargets targets;
+    private final NotificationEvents notificationEvents;
 
     // =====================================================================
     // ĐỌC
@@ -147,9 +148,12 @@ public class ModerationService {
         }
         String note = validateReason(reason, true);
 
+        List<Long> reporterIds = pendingReporterIds(t, id);
         targets.hide(target, actor, note);
         int closed = reportRepository.closePending(t, id, ContentReport.RESOLVED, "HIDDEN", actor, LocalDateTime.now());
         log(actor, ModerationAction.HIDE, target, note, closed);
+        notifyModerated(true, target, note);
+        notificationEvents.onReportsReviewed(reporterIds, t, id, actor.getId());
 
         return buildDetail(actor, targets.load(t, id, false));
     }
@@ -170,6 +174,7 @@ public class ModerationService {
 
         targets.restore(target, actor, note);
         log(actor, ModerationAction.RESTORE, target, note, 0);
+        notifyModerated(false, target, note);
 
         return buildDetail(actor, targets.load(t, id, false));
     }
@@ -186,11 +191,13 @@ public class ModerationService {
         }
         String note = validateReason(reason, false);
 
+        List<Long> reporterIds = pendingReporterIds(t, id);
         int closed = reportRepository.closePending(t, id, ContentReport.REJECTED, "DISMISSED", actor, LocalDateTime.now());
         if (closed == 0) {
             throw new IllegalStateException("Không còn báo cáo nào đang chờ xử lý cho nội dung này.");
         }
         log(actor, ModerationAction.DISMISS, target, note, closed);
+        notificationEvents.onReportsReviewed(reporterIds, t, id, actor.getId());
 
         return buildDetail(actor, targets.load(t, id, false));
     }
@@ -258,6 +265,29 @@ public class ModerationService {
             throw new IllegalArgumentException("Lý do tối đa " + MAX_REASON_LENGTH + " ký tự.");
         }
         return reason;
+    }
+
+    /** Id những người báo cáo còn đang chờ xử lý - phải lấy TRƯỚC khi đóng báo cáo. */
+    private List<Long> pendingReporterIds(String type, Long id) {
+        return reportRepository.findAllByTarget(type, id).stream()
+                .filter(r -> ContentReport.PENDING.equals(r.getStatus()))
+                .map(r -> r.getReporter().getId())
+                .distinct()
+                .toList();
+    }
+
+    /** Báo cho tác giả nội dung bị ẩn / được khôi phục (kèm lý do). Gửi sau khi commit, lỗi không ảnh hưởng thao tác. */
+    private void notifyModerated(boolean hidden, Target target, String note) {
+        if (target.author() == null) {
+            return;
+        }
+        Long postId = switch (target.type()) {
+            case ModerationTargets.POST -> target.id();
+            case ModerationTargets.POST_COMMENT -> target.postId();
+            default -> null;
+        };
+        notificationEvents.onContentModerated(
+                hidden, target.type(), target.id(), target.author().getId(), postId, note);
     }
 
     private void log(User actor, String action, Target target, String reason, int reportCount) {

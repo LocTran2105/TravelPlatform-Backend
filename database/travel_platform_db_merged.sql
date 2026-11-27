@@ -1364,3 +1364,28 @@ SELECT * FROM (
 WHERE NOT EXISTS (SELECT 1 FROM cover_images);
 
 -- UPDATE travel_platform_db.users SET role = 'ROLE_ADMIN' WHERE email = 'tranhuuloc05@gmail.com';
+
+CREATE TABLE IF NOT EXISTS notifications (
+                                             id            BIGINT       NOT NULL AUTO_INCREMENT,
+                                             recipient_id  BIGINT       NOT NULL,
+                                             actor_id      BIGINT       NULL,
+                                             type          VARCHAR(30)  NOT NULL,
+    target_type   VARCHAR(30)  NULL,
+    target_id     BIGINT       NULL,
+    link          VARCHAR(255) NULL,
+    message       VARCHAR(500) NULL,
+    actor_count   INT          NOT NULL DEFAULT 1,
+    is_read       TINYINT(1)   NOT NULL DEFAULT 0,
+    dedupe_key    VARCHAR(120) NULL,
+    created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    event_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    -- Chống trùng / gộp theo từng người nhận (NULL không bị ràng buộc)
+    UNIQUE KEY uk_notifications_recipient_dedupe (recipient_id, dedupe_key),
+    KEY idx_notifications_recipient_event (recipient_id, event_at, id),
+    KEY idx_notifications_recipient_unread (recipient_id, is_read),
+    KEY idx_notifications_cleanup (is_read, event_at),
+    CONSTRAINT fk_notifications_recipient FOREIGN KEY (recipient_id) REFERENCES users (id) ON DELETE CASCADE,
+    CONSTRAINT fk_notifications_actor FOREIGN KEY (actor_id) REFERENCES users (id) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+

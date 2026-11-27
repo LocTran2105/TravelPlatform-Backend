@@ -24,10 +24,14 @@ public class FollowService {
 
     private final FollowRepository followRepository;
     private final UserRepository userRepository;
+    private final NotificationEvents notificationEvents;
 
-    public FollowService(FollowRepository followRepository, UserRepository userRepository) {
+    public FollowService(FollowRepository followRepository,
+                         UserRepository userRepository,
+                         NotificationEvents notificationEvents) {
         this.followRepository = followRepository;
         this.userRepository = userRepository;
+        this.notificationEvents = notificationEvents;
     }
 
     /**
@@ -46,6 +50,7 @@ public class FollowService {
         if (!followRepository.existsByFollowerIdAndFollowedId(actor.getId(), target.getId())) {
             try {
                 followRepository.saveAndFlush(Follow.builder().follower(actor).followed(target).build());
+                notificationEvents.onFollowed(actor.getId(), target.getId());
             } catch (DataIntegrityViolationException ignored) {
                 // Hai yêu cầu đến cùng lúc: yêu cầu kia đã tạo bản ghi, kết quả vẫn là "đã theo dõi".
             }
