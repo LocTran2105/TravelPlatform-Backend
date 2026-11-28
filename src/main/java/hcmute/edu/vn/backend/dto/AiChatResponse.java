@@ -23,6 +23,8 @@ public class AiChatResponse {
     private Integer targetDayNumber;
     /** Địa điểm dùng làm mốc "gần ..." khi xếp hạng gợi ý. */
     private String anchorName;
+    /** Trợ lý vừa tối ưu lộ trình: FE hiện nút "Xem & áp dụng" mở hộp tối ưu cho các ngày này. */
+    private List<Long> optimizeDayIds;
 
     @Data
     @Builder

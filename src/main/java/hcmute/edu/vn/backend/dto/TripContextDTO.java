@@ -30,6 +30,8 @@ public class TripContextDTO {
     private String anchorName;
     private Double anchorLatitude;
     private Double anchorLongitude;
+    /** Mô tả ngắn các nơi ở của chuyến đi cho prompt AI, vd. "Colline Dalat (28/11 → 30/11)". */
+    private List<String> stays;
 
     @Data
     @Builder
@@ -42,6 +44,8 @@ public class TripContextDTO {
         private List<String> existingPlaces;
         /** Địa điểm có tọa độ của ngày, theo thứ tự lịch trình (dùng để gợi ý "gần X", "ngày N"). */
         private List<PlacePoint> placePoints;
+        /** Nơi ở xuất phát của ngày (đêm trước; không có thì đêm nay): mốc khi gợi ý điểm cho ngày đó. */
+        private PlacePoint stay;
     }
 
     @Data

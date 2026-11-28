@@ -2,6 +2,7 @@ package hcmute.edu.vn.backend.service;
 
 import hcmute.edu.vn.backend.dto.AiChatRequest;
 import hcmute.edu.vn.backend.dto.AiChatResponse;
+import hcmute.edu.vn.backend.dto.ItineraryOptimizationDtos;
 import hcmute.edu.vn.backend.dto.PlaceDiscoveryDTO;
 import hcmute.edu.vn.backend.dto.TripContextDTO;
 import hcmute.edu.vn.backend.entity.AiConversation;
@@ -13,6 +14,7 @@ import hcmute.edu.vn.backend.repository.AiMessageRepository;
 import hcmute.edu.vn.backend.repository.PlaceRepository;
 import hcmute.edu.vn.backend.repository.PlaceReviewRepository;
 import hcmute.edu.vn.backend.repository.UserRepository;
+import hcmute.edu.vn.backend.service.itinerary.ItineraryOptimizationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.AccessDeniedException;
@@ -89,6 +91,7 @@ public class GeminiAiService {
     private final AiMessageRepository messageRepository;
     private final JsonMapper jsonMapper;
     private final AiRateLimiter aiRateLimiter;
+    private final ItineraryOptimizationService itineraryOptimizationService;
 
     // ======================================================================
     // Người dùng hiện tại & lịch sử
@@ -177,9 +180,15 @@ public class GeminiAiService {
         boolean aiAllowed = aiRateLimiter.tryAcquire(currentUser.getId());
         // "Ngày 2 nên đi đâu, ưu tiên gần An Cafe": xác định ngày đích + địa điểm mốc trong lịch trình.
         PlanFocus focus = resolvePlanFocus(userMessage, context);
-        ChatOutcome outcome = isPlaceDiscoveryIntent(focus.intentText())
-                ? handlePlaceDiscovery(userMessage, withFocus(context, focus), history, aiAllowed, focus)
-                : handleGeneralChat(userMessage, withFocus(context, focus), history, aiAllowed);
+        ChatOutcome outcome;
+        if (isOptimizeIntent(userMessage)) {
+            // Tối ưu lộ trình chạy bằng thuật toán, không gọi Gemini nên không tốn lượt AI.
+            outcome = handleOptimize(context, focus, currentUser.getEmail());
+        } else if (isPlaceDiscoveryIntent(focus.intentText())) {
+            outcome = handlePlaceDiscovery(userMessage, withFocus(context, focus), history, aiAllowed, focus);
+        } else {
+            outcome = handleGeneralChat(userMessage, withFocus(context, focus), history, aiAllowed);
+        }
 
         messageRepository.save(AiMessage.builder()
                 .conversationId(conversation.getId())
@@ -197,10 +206,15 @@ public class GeminiAiService {
                 .targetDayId(focus.dayId())
                 .targetDayNumber(focus.dayNumber())
                 .anchorName(outcome.recommendations().isEmpty() ? null : focus.anchorName())
+                .optimizeDayIds(outcome.optimizeDayIds())
                 .build();
     }
 
-    private record ChatOutcome(String text, List<PlaceDiscoveryDTO> recommendations) { }
+    private record ChatOutcome(String text, List<PlaceDiscoveryDTO> recommendations, List<Long> optimizeDayIds) {
+        ChatOutcome(String text, List<PlaceDiscoveryDTO> recommendations) {
+            this(text, recommendations, null);
+        }
+    }
 
     /**
      * Trọng tâm của câu hỏi: ngày đích (nếu nhắc "ngày N"), địa điểm mốc để ưu tiên ở gần,
@@ -219,6 +233,15 @@ public class GeminiAiService {
         if (dayMatcher.find()) {
             int dayNumber = Integer.parseInt(dayMatcher.group(1));
             targetDay = days.stream().filter(d -> Objects.equals(d.getDayNumber(), dayNumber)).findFirst().orElse(null);
+        } else {
+            // "Ngày mai / hôm nay đi đâu" khi đang trong chuyến đi: đổi sang ngày tương ứng của lịch trình.
+            String plain = normalizeVietnamese(message);
+            java.time.LocalDate wanted = containsAny(plain, "ngay mai", "sang mai", "chieu mai", "toi mai")
+                    ? java.time.LocalDate.now().plusDays(1)
+                    : containsAny(plain, "hom nay", "chieu nay", "toi nay") ? java.time.LocalDate.now() : null;
+            if (wanted != null) {
+                targetDay = days.stream().filter(d -> wanted.equals(dayDateOf(context, d))).findFirst().orElse(null);
+            }
         }
 
         // 2. Địa điểm trong lịch trình được nhắc tên (chọn tên dài nhất khớp).
@@ -241,8 +264,16 @@ public class GeminiAiService {
             }
         }
 
-        // 3. Mốc: địa điểm được nhắc > điểm đầu của ngày đích > điểm cuối của ngày gần nhất trước đó.
+        // 3. Mốc: địa điểm được nhắc > nơi ở (khách sạn/homestay) của ngày đích > điểm đầu của ngày đích
+        //    > điểm cuối của ngày gần nhất trước đó. Hỏi "gần khách sạn/homestay" thì lấy nơi ở.
         TripContextDTO.PlacePoint anchor = mentioned;
+        if (anchor == null && targetDay != null && targetDay.getStay() != null) {
+            anchor = targetDay.getStay();
+        }
+        if (anchor == null && containsAny(normalizeVietnamese(message),
+                "gan khach san", "gan homestay", "gan cho o", "gan noi o", "gan resort", "quanh khach san", "quanh homestay")) {
+            anchor = days.stream().map(TripContextDTO.TripDaySummaryDTO::getStay).filter(Objects::nonNull).findFirst().orElse(null);
+        }
         if (anchor == null && targetDay != null) {
             if (targetDay.getPlacePoints() != null && !targetDay.getPlacePoints().isEmpty()) {
                 anchor = targetDay.getPlacePoints().get(0);
@@ -278,6 +309,7 @@ public class GeminiAiService {
                 .anchorName(focus.anchorName())
                 .anchorLatitude(focus.anchorLatitude())
                 .anchorLongitude(focus.anchorLongitude())
+                .stays(context.getStays())
                 .build();
     }
 
@@ -1038,6 +1070,68 @@ public class GeminiAiService {
                 || containsAny(normalized, RESTAURANT_TERMS);
     }
 
+    /** "Tối ưu / sắp xếp lại lịch trình", "nên đi theo thứ tự nào", "lộ trình hợp lý"... */
+    private boolean isOptimizeIntent(String message) {
+        String normalized = normalizeVietnamese(message);
+        return containsAny(normalized, "toi uu", "sap xep lai", "xep lai", "thu tu nao", "theo thu tu",
+                "lo trinh hop ly", "di sao cho", "do vong", "tiet kiem thoi gian di chuyen",
+                "sap xep lich trinh", "sap xep ngay");
+    }
+
+    private ChatOutcome handleOptimize(TripContextDTO context, PlanFocus focus, String email) {
+        List<Long> dayIds = focus.dayId() != null ? List.of(focus.dayId()) : List.of();
+        ItineraryOptimizationDtos.OptimizationResponse result;
+        try {
+            result = itineraryOptimizationService.optimize(context.getTripId(),
+                    new ItineraryOptimizationDtos.OptimizeRequest(dayIds, null, null), email);
+        } catch (Exception ex) {
+            log.warn("Tối ưu lộ trình từ chat lỗi: {}", ex.getMessage());
+            return new ChatOutcome("Mình chưa tối ưu được lộ trình lúc này, bạn thử bấm nút \"Tối ưu\" ở từng ngày nhé.", List.of());
+        }
+
+        StringBuilder text = new StringBuilder();
+        List<Long> changedDays = new ArrayList<>();
+        for (ItineraryOptimizationDtos.DayPlan day : result.days()) {
+            if (ItineraryOptimizationService.STATUS_SKIPPED.equals(day.status())) continue;
+            text.append("• Ngày ").append(day.dayNumber()).append(": ");
+            if (day.changed()) {
+                changedDays.add(day.dayId());
+                text.append(day.summary());
+                List<String> names = day.stops().stream().map(ItineraryOptimizationDtos.PlannedStop::name).toList();
+                text.append("\n  Thứ tự đề xuất: ");
+                if (day.start() != null) text.append(day.start().name()).append(" (").append(day.departAt()).append(") → ");
+                text.append(String.join(" → ", names));
+            } else {
+                text.append("thứ tự hiện tại đã hợp lý");
+            }
+            long issues = day.stops().stream().filter(st -> !st.warnings().isEmpty()).count();
+            if (issues > 0) text.append("\n  Lưu ý: ").append(issues).append(" điểm cần xem lại giờ mở cửa/giờ hẹn.");
+            text.append("\n");
+        }
+        for (ItineraryOptimizationDtos.MoveSuggestion move : result.moveSuggestions()) {
+            text.append("• Gợi ý: chuyển \"").append(move.name()).append("\" sang Ngày ").append(move.toDayNumber())
+                    .append(". ").append(move.reason()).append("\n");
+        }
+        if (text.length() == 0) {
+            return new ChatOutcome("Lịch trình chưa có đủ địa điểm có vị trí trên bản đồ để tối ưu.", List.of());
+        }
+        String intro = changedDays.isEmpty() && result.moveSuggestions().isEmpty()
+                ? "Mình đã kiểm tra quãng đường, giờ mở cửa và khung giờ đẹp của từng điểm:\n"
+                : "Mình đã tính lại lộ trình theo quãng đường, giờ mở cửa và khung giờ đẹp (săn mây, chụp ảnh, giờ ăn...):\n";
+        String outro = changedDays.isEmpty() ? ""
+                : "\nBấm \"Xem & áp dụng\" để xem giờ dự kiến từng điểm và áp dụng vào lịch trình.";
+        List<Long> openDays = dayIds.isEmpty() ? changedDays : dayIds;
+        return new ChatOutcome(intro + text + outro, List.of(), openDays.isEmpty() ? null : openDays);
+    }
+
+    private static java.time.LocalDate dayDateOf(TripContextDTO context, TripContextDTO.TripDaySummaryDTO day) {
+        if (day.getDayDate() != null) return day.getDayDate();
+        if (context.getStartDate() != null && day.getDayNumber() != null) {
+            return context.getStartDate().plusDays(day.getDayNumber() - 1L);
+        }
+        return null;
+    }
+
     private boolean isBudgetIntent(String message) {
         return containsAny(normalizeVietnamese(message), "ngan sach", "chi phi", "bao nhieu tien", "budget", "chia tien");
     }
@@ -1114,6 +1208,9 @@ public class GeminiAiService {
         prompt.append("- Số người: ").append(context.getMemberCount() != null ? context.getMemberCount() : 1).append("\n");
         prompt.append("- Ngân sách: ").append(context.getTotalBudget() != null
                 ? context.getTotalBudget().toPlainString() + " VND" : "chưa đặt").append("\n");
+        if (context.getStays() != null && !context.getStays().isEmpty()) {
+            prompt.append("- Nơi ở: ").append(limit(sanitizePromptValue(String.join("; ", context.getStays())), 300)).append("\n");
+        }
         if (context.getTripDays() != null && !context.getTripDays().isEmpty()) {
             prompt.append("- Lịch trình hiện có:\n");
             for (TripContextDTO.TripDaySummaryDTO day : context.getTripDays()) {

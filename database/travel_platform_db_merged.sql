@@ -1,4 +1,4 @@
-/* ============================================================================
+/* =====================================================================
    TRAVEL PLATFORM DATABASE - CLEAN INSTALL
    Target: MySQL 8.0.16+ (InnoDB, utf8mb4)
    File: travel_platform_db_full.sql
@@ -1417,3 +1417,26 @@ ALTER TABLE trips
     ADD COLUMN cloned_from_post_id BIGINT NULL AFTER cloned_from_trip_id,
     ADD KEY idx_trips_cloned_from_post (cloned_from_post_id),
     ADD CONSTRAINT fk_trips_cloned_from_post FOREIGN KEY (cloned_from_post_id) REFERENCES posts(id) ON DELETE SET NULL;
+=======
+
+-- Nơi ở của chuyến đi (khách sạn/homestay): tách khỏi các điểm đi chơi trong ngày.
+-- Đêm D thuộc stay có check_in_date <= D < check_out_date. Dùng làm điểm xuất phát/kết thúc khi tối ưu lộ trình.
+CREATE TABLE IF NOT EXISTS trip_stays (
+    id              BIGINT        NOT NULL AUTO_INCREMENT,
+    trip_id         BIGINT        NOT NULL,
+    place_id        BIGINT        NULL,
+    name            VARCHAR(255)  NOT NULL,
+    address         VARCHAR(500)  NULL,
+    latitude        DECIMAL(10,7) NULL,
+    longitude       DECIMAL(10,7) NULL,
+    check_in_date   DATE          NOT NULL,
+    check_out_date  DATE          NOT NULL,
+    note            TEXT          NULL,
+    created_by      BIGINT        NULL,
+    created_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    KEY idx_trip_stays_trip (trip_id, check_in_date),
+    CONSTRAINT fk_trip_stays_trip FOREIGN KEY (trip_id) REFERENCES trips (id) ON DELETE CASCADE,
+    CONSTRAINT fk_trip_stays_place FOREIGN KEY (place_id) REFERENCES places (id) ON DELETE SET NULL,
+    CONSTRAINT fk_trip_stays_creator FOREIGN KEY (created_by) REFERENCES users (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

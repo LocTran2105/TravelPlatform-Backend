@@ -4,12 +4,16 @@ import hcmute.edu.vn.backend.dto.TripContextDTO;
 import hcmute.edu.vn.backend.entity.Trip;
 import hcmute.edu.vn.backend.entity.TripDay;
 import hcmute.edu.vn.backend.entity.TripDestination;
+import hcmute.edu.vn.backend.entity.TripStay;
 import hcmute.edu.vn.backend.repository.TripRepository;
+import hcmute.edu.vn.backend.repository.TripStayRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -22,6 +26,9 @@ public class TripContextService {
 
     private final TripRepository tripRepository;
     private final TripAccessService tripAccessService;
+    private final TripStayRepository tripStayRepository;
+
+    private static final DateTimeFormatter SHORT_DATE = DateTimeFormatter.ofPattern("dd/MM");
 
     /**
      * Dùng cho trợ lý AI: chủ chuyến đi hoặc tripmate (kể cả chỉ xem) đều dùng được,
@@ -54,6 +61,7 @@ public class TripContextService {
     }
 
     private TripContextDTO toContext(Trip trip) {
+        List<TripStay> stays = tripStayRepository.findByTripIdOrderByCheckInDateAscIdAsc(trip.getId());
 
         List<TripContextDTO.TripDaySummaryDTO> daySummaries = new ArrayList<>();
         TripDestination anchor = null;
@@ -94,6 +102,7 @@ public class TripContextService {
                         .dayDate(day.getDayDate())
                         .existingPlaces(existingPlaces)
                         .placePoints(placePoints)
+                        .stay(stayPointFor(trip, day, stays))
                         .build());
             }
         }
@@ -110,6 +119,32 @@ public class TripContextService {
                 .anchorName(anchor != null ? anchor.getPlaceName() : null)
                 .anchorLatitude(anchor != null ? anchor.getLatitude().doubleValue() : null)
                 .anchorLongitude(anchor != null ? anchor.getLongitude().doubleValue() : null)
+                .stays(stays.stream().map(s -> s.getName() + " (" + s.getCheckInDate().format(SHORT_DATE)
+                        + " → " + s.getCheckOutDate().format(SHORT_DATE) + ")").toList())
+                .build();
+    }
+
+    /** Nơi ở của đêm trước ngày này (xuất phát buổi sáng); không có thì nơi ở của đêm nay. */
+    private static TripContextDTO.PlacePoint stayPointFor(Trip trip, TripDay day, List<TripStay> stays) {
+        LocalDate date = day.getDayDate();
+        if (date == null && trip.getStartDate() != null && day.getDayNumber() != null) {
+            date = trip.getStartDate().plusDays(day.getDayNumber() - 1L);
+        }
+        if (date == null) return null;
+        TripStay found = null;
+        for (TripStay stay : stays) {
+            if (stay.hasCoordinates() && stay.coversNight(date.minusDays(1))) { found = stay; break; }
+        }
+        if (found == null) {
+            for (TripStay stay : stays) {
+                if (stay.hasCoordinates() && stay.coversNight(date)) { found = stay; break; }
+            }
+        }
+        if (found == null) return null;
+        return TripContextDTO.PlacePoint.builder()
+                .name(found.getName())
+                .latitude(found.getLatitude().doubleValue())
+                .longitude(found.getLongitude().doubleValue())
                 .build();
     }
 }
