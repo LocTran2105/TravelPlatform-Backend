@@ -39,6 +39,14 @@ public class NotificationEvents {
         dispatch("commentCreated", () -> writer.commentCreated(commentId));
     }
 
+    public void onTripCopied(Long actorId, Long sourceTripId) {
+        dispatch("tripCopied", () -> writer.tripCopied(actorId, sourceTripId));
+    }
+
+    public void onPostTripCopied(Long actorId, Long postId) {
+        dispatch("postTripCopied", () -> writer.postTripCopied(actorId, postId));
+    }
+
     public void onContentModerated(boolean hidden, String targetType, Long targetId,
                                    Long authorId, Long postId, String reason) {
         dispatch("contentModerated",

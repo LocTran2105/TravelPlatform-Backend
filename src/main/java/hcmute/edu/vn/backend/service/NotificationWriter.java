@@ -3,10 +3,12 @@ package hcmute.edu.vn.backend.service;
 import hcmute.edu.vn.backend.entity.Notification;
 import hcmute.edu.vn.backend.entity.Post;
 import hcmute.edu.vn.backend.entity.PostComment;
+import hcmute.edu.vn.backend.entity.Trip;
 import hcmute.edu.vn.backend.entity.User;
 import hcmute.edu.vn.backend.repository.NotificationRepository;
 import hcmute.edu.vn.backend.repository.PostCommentRepository;
 import hcmute.edu.vn.backend.repository.PostRepository;
+import hcmute.edu.vn.backend.repository.TripRepository;
 import hcmute.edu.vn.backend.repository.UserRepository;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
@@ -31,15 +33,18 @@ public class NotificationWriter {
     private final UserRepository userRepository;
     private final PostRepository postRepository;
     private final PostCommentRepository commentRepository;
+    private final TripRepository tripRepository;
 
     public NotificationWriter(NotificationRepository repository,
                               UserRepository userRepository,
                               PostRepository postRepository,
-                              PostCommentRepository commentRepository) {
+                              PostCommentRepository commentRepository,
+                              TripRepository tripRepository) {
         this.repository = repository;
         this.userRepository = userRepository;
         this.postRepository = postRepository;
         this.commentRepository = commentRepository;
+        this.tripRepository = tripRepository;
     }
 
     // =====================================================================
@@ -147,6 +152,79 @@ public class NotificationWriter {
             n.setLink(postLink(post));
             insertIgnoringDuplicate(n);
         }
+    }
+
+    /**
+     * Có người sao chép lịch trình. Gộp thành một thông báo cho mỗi chuyến đi:
+     * "A và N người khác đã sao chép lịch trình của bạn". Một người chép nhiều lần không bị đếm lặp.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void tripCopied(Long actorId, Long sourceTripId) {
+        if (actorId == null || sourceTripId == null) {
+            return;
+        }
+        Trip trip = tripRepository.findById(sourceTripId).orElse(null);
+        if (trip == null || trip.getUser() == null) {
+            return;
+        }
+        Long ownerId = trip.getUser().getId();
+        if (actorId.equals(ownerId) || !isActive(ownerId)) {
+            return;
+        }
+        int count = (int) Math.max(1, tripRepository.countDistinctCopiers(sourceTripId, ownerId));
+        String key = "TC:" + sourceTripId;
+
+        Notification n = base(ownerId, actorId, Notification.TRIP_COPIED, "TRIP", sourceTripId, key);
+        n.setActorCount(count);
+        n.setLink("/trips/" + sourceTripId);
+        n.setMessage(truncate(trip.getTitle()));
+        insertOrMerge(n, existing -> {
+            // Cùng người chép lại (số người không đổi) -> không đẩy thông báo lên nữa.
+            if (actorId.equals(existing.getActorId()) && count <= existing.getActorCount()) {
+                return;
+            }
+            existing.setActorId(actorId);
+            existing.setActorCount(count);
+            existing.setMessage(truncate(trip.getTitle()));
+            existing.setSeen(false);
+            existing.setEventAt(LocalDateTime.now());
+        });
+    }
+
+    /**
+     * Có người sao chép lịch trình trong bài viết -> báo cho tác giả bài, link tới bài.
+     * Gộp một thông báo cho mỗi bài: "A và N người khác đã sao chép lịch trình trong bài viết của bạn".
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void postTripCopied(Long actorId, Long postId) {
+        if (actorId == null || postId == null) {
+            return;
+        }
+        Post post = postRepository.findById(postId).orElse(null);
+        if (post == null || !isVisiblePost(post) || post.getUser() == null) {
+            return;
+        }
+        Long authorId = post.getUser().getId();
+        if (actorId.equals(authorId) || !isActive(authorId)) {
+            return;
+        }
+        int count = (int) Math.max(1, tripRepository.countDistinctCopiersOfPost(postId, authorId));
+        String title = post.getTripSnapshot() != null ? truncate(post.getTripSnapshot().title()) : null;
+
+        Notification n = base(authorId, actorId, Notification.TRIP_COPIED, "POST", postId, "TCP:" + postId);
+        n.setActorCount(count);
+        n.setLink(postLink(post));
+        n.setMessage(title);
+        insertOrMerge(n, existing -> {
+            if (actorId.equals(existing.getActorId()) && count <= existing.getActorCount()) {
+                return;
+            }
+            existing.setActorId(actorId);
+            existing.setActorCount(count);
+            existing.setMessage(title);
+            existing.setSeen(false);
+            existing.setEventAt(LocalDateTime.now());
+        });
     }
 
     // =====================================================================

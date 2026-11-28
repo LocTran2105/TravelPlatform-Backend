@@ -1,5 +1,6 @@
 package hcmute.edu.vn.backend.controller;
 
+import hcmute.edu.vn.backend.dto.PostTripDtos;
 import hcmute.edu.vn.backend.dto.UpdatePostRequest;
 import hcmute.edu.vn.backend.entity.Post;
 import hcmute.edu.vn.backend.service.FeedService;
@@ -51,6 +52,10 @@ public class PostController {
             @RequestParam(value = "visibility", required = false, defaultValue = "PUBLIC")
             String visibility,
 
+            // Lịch trình gắn vào bài (không bắt buộc): phải là chuyến đi của chính người đăng.
+            @RequestParam(value = "tripId", required = false)
+            Long tripId,
+
             Principal principal
     ) {
 
@@ -64,6 +69,7 @@ public class PostController {
                     longitude,
                     rating,
                     visibility,
+                    tripId,
                     files
             );
 
@@ -184,6 +190,57 @@ public class PostController {
             return ResponseEntity.badRequest().body(exception.getMessage());
         } catch (Exception exception) {
             return ResponseEntity.internalServerError().body("Lỗi tải bài viết: " + exception.getMessage());
+        }
+    }
+
+    /**
+     * Lịch trình (chỉ đọc, từ bản chụp) trong bài viết. Ai xem được bài thì xem được, kể cả khách.
+     * 404: không xem được bài / bài không có lịch trình.
+     */
+    @GetMapping("/{id}/trip")
+    public ResponseEntity<?> getPostItinerary(@PathVariable Long id, Principal principal) {
+        try {
+            String viewerEmail = (principal != null) ? principal.getName() : null;
+            return ResponseEntity.ok(postService.getPostItinerary(id, viewerEmail));
+        } catch (Exception exception) {
+            return errorResponse(exception, "Lỗi tải lịch trình: ");
+        }
+    }
+
+    /**
+     * Sao chép lịch trình trong bài thành chuyến đi mới (Riêng tư) của người đang đăng nhập.
+     * Body (không bắt buộc): { "title": "...", "startDate": "2026-12-20" }.
+     */
+    @PostMapping("/{id}/copy-trip")
+    public ResponseEntity<?> copyTripFromPost(
+            @PathVariable Long id,
+            @RequestBody(required = false) PostTripDtos.CopyTripRequest request,
+            Principal principal
+    ) {
+        try {
+            return ResponseEntity.ok(postService.copyTripFromPost(principal.getName(), id, request));
+        } catch (Exception exception) {
+            return errorResponse(exception, "Lỗi khi sao chép lịch trình: ");
+        }
+    }
+
+    /** Tác giả cập nhật lịch trình trong bài theo chuyến đi gốc hiện tại. Trả bài viết đã cập nhật. */
+    @PostMapping("/{id}/trip/refresh")
+    public ResponseEntity<?> refreshPostTrip(@PathVariable Long id, Principal principal) {
+        try {
+            return ResponseEntity.ok(postService.refreshPostTrip(principal.getName(), id));
+        } catch (Exception exception) {
+            return errorResponse(exception, "Lỗi khi cập nhật lịch trình: ");
+        }
+    }
+
+    /** Tác giả gỡ lịch trình khỏi bài. Trả bài viết đã cập nhật. */
+    @DeleteMapping("/{id}/trip")
+    public ResponseEntity<?> removePostTrip(@PathVariable Long id, Principal principal) {
+        try {
+            return ResponseEntity.ok(postService.removePostTrip(principal.getName(), id));
+        } catch (Exception exception) {
+            return errorResponse(exception, "Lỗi khi gỡ lịch trình: ");
         }
     }
 

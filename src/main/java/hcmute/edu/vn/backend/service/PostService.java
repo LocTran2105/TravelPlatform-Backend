@@ -2,8 +2,14 @@ package hcmute.edu.vn.backend.service;
 
 import hcmute.edu.vn.backend.dto.PostPageResponse;
 import hcmute.edu.vn.backend.dto.PostResponse;
+import hcmute.edu.vn.backend.dto.PostTripDtos.CopyTripRequest;
+import hcmute.edu.vn.backend.dto.PostTripDtos.CopyTripResponse;
+import hcmute.edu.vn.backend.dto.PostTripDtos.ItineraryPreview;
+import hcmute.edu.vn.backend.dto.PostTripDtos.TripPreview;
+import hcmute.edu.vn.backend.dto.TripSnapshot;
 import hcmute.edu.vn.backend.entity.Image;
 import hcmute.edu.vn.backend.entity.Post;
+import hcmute.edu.vn.backend.entity.Trip;
 import hcmute.edu.vn.backend.entity.User;
 import hcmute.edu.vn.backend.repository.*;
 
@@ -16,6 +22,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -23,6 +31,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -52,6 +61,12 @@ public class PostService {
     // Thống kê gộp: số tim, đã tim chưa, số bình luận, ảnh/video cho cả danh sách bài.
     private final PostStatsRepository postStatsRepository;
 
+    // Lịch trình trong bài (bản chụp): chụp, sao chép, quyền xem bài.
+    private final TripRepository tripRepository;
+    private final TripSnapshotService tripSnapshotService;
+    private final TripCloneService tripCloneService;
+    private final PostAccessService postAccessService;
+
     /** Quan hệ giữa người xem và tác giả, tính một lần cho mỗi tác giả. */
     private record Relation(boolean followedByMe, boolean followingMe, String label) {}
 
@@ -73,6 +88,7 @@ public class PostService {
             Double longitude,
             Integer rating,
             String visibility,
+            Long tripId,
             List<MultipartFile> files
     ) throws Exception {
 
@@ -80,6 +96,8 @@ public class PostService {
 
         validatePostData(latitude, longitude, rating);
         String normalizedVisibility = normalizeVisibility(visibility);
+        Trip attachedTrip = resolveAttachableTrip(user, tripId);
+        TripSnapshot snapshot = attachedTrip != null ? tripSnapshotService.capture(attachedTrip) : null;
 
         // Bỏ các phần tử rỗng (ô chọn file trống) trước khi kiểm tra.
         List<MultipartFile> media = files == null
@@ -87,8 +105,8 @@ public class PostService {
                 : files.stream().filter(f -> f != null && !f.isEmpty()).toList();
 
         boolean hasCaption = caption != null && !caption.isBlank();
-        if (!hasCaption && media.isEmpty()) {
-            throw new IllegalArgumentException("Bài viết cần có nội dung hoặc ảnh/video.");
+        if (!hasCaption && media.isEmpty() && attachedTrip == null) {
+            throw new IllegalArgumentException("Bài viết cần có nội dung, ảnh/video hoặc lịch trình.");
         }
         if (media.size() > MAX_MEDIA_FILES) {
             throw new IllegalArgumentException(
@@ -116,6 +134,9 @@ public class PostService {
 
         Post post = new Post();
         post.setUser(user);
+        if (attachedTrip != null) {
+            applySnapshot(post, attachedTrip, snapshot);
+        }
         post.setCaption(hasCaption ? caption.trim() : null);
         post.setLocationName(locationName);
         post.setLatitude(latitude != null ? BigDecimal.valueOf(latitude) : null);
@@ -178,8 +199,8 @@ public class PostService {
         boolean hasCaption = post.getCaption() != null && !post.getCaption().isBlank();
         boolean hasMedia = !imageRepository
                 .findByEntityTypeAndEntityId("POST", post.getId()).isEmpty();
-        if (!hasCaption && !hasMedia) {
-            throw new IllegalArgumentException("Bài viết cần có nội dung hoặc ảnh/video.");
+        if (!hasCaption && !hasMedia && post.getTripSnapshot() == null) {
+            throw new IllegalArgumentException("Bài viết cần có nội dung, ảnh/video hoặc lịch trình.");
         }
 
         Post saved = postRepository.save(post);
@@ -256,6 +277,180 @@ public class PostService {
                 normalizeCursor(before), PageRequest.of(0, pageSize + 1));
 
         return buildPage(rows, pageSize, currentUser);
+    }
+
+    // =====================================================================
+    // LỊCH TRÌNH TRONG BÀI (BẢN CHỤP): XEM + SAO CHÉP + CẬP NHẬT + GỠ
+    //  - Bài lưu bản chụp lịch trình + chi phí lúc đăng; tác giả sửa chuyến gốc thì bài không đổi.
+    //  - Ai xem được BÀI VIẾT thì xem và sao chép được (quyền của chuyến đi gốc không áp dụng).
+    //  - Chỉ tác giả được cập nhật bản chụp từ chuyến gốc hoặc gỡ lịch trình khỏi bài.
+    // =====================================================================
+
+    /** Lịch trình đầy đủ (chỉ đọc) của bài viết. viewerEmail = null nghĩa là khách. */
+    @Transactional(readOnly = true)
+    public ItineraryPreview getPostItinerary(Long postId, String viewerEmail) {
+        User viewer = findUserOrNull(viewerEmail);
+        Post post = requireViewablePostWithTrip(postId, viewer);
+        TripPreview preview = buildTripPreviews(List.of(post), viewer).get(post.getId());
+        return tripSnapshotService.toItinerary(post.getTripSnapshot(), preview);
+    }
+
+    /** Sao chép lịch trình trong bài (từ bản chụp) thành chuyến đi mới (Riêng tư) của người đang đăng nhập. */
+    @Transactional
+    public CopyTripResponse copyTripFromPost(String email, Long postId, CopyTripRequest request) {
+        User user = requireActiveUser(email);
+        Post post = requireViewablePostWithTrip(postId, user);
+        Trip copy = tripCloneService.copyFromSnapshot(
+                post,
+                user,
+                request != null ? request.title() : null,
+                request != null ? request.startDate() : null);
+        return new CopyTripResponse(copy.getId(), copy.getTitle());
+    }
+
+    /** Tác giả chụp lại lịch trình từ chuyến đi gốc hiện tại. */
+    @Transactional
+    public PostResponse refreshPostTrip(String email, Long postId) {
+        User user = requireActiveUser(email);
+        Post post = requireOwnedPublishedPost(user, postId, "cập nhật lịch trình của");
+        requireNotHidden(post);
+        if (post.getTripSnapshot() == null) {
+            throw new IllegalStateException("Bài viết không có lịch trình.");
+        }
+        Trip trip = post.getTrip();
+        if (trip == null) {
+            throw new IllegalStateException(
+                    "Chuyến đi gốc đã bị xóa nên không thể cập nhật. Lịch trình trong bài vẫn được giữ nguyên.");
+        }
+        if (!trip.getUser().getId().equals(user.getId())) {
+            throw new AccessDeniedException("Bạn không còn là chủ của chuyến đi này.");
+        }
+        applySnapshot(post, trip, tripSnapshotService.capture(trip));
+        Post saved = postRepository.save(post);
+        return toPostResponses(List.of(saved), user).get(0);
+    }
+
+    /** Tác giả gỡ lịch trình khỏi bài (bản chụp bị xóa; các bản đã sao chép không bị ảnh hưởng). */
+    @Transactional
+    public PostResponse removePostTrip(String email, Long postId) {
+        User user = requireActiveUser(email);
+        Post post = requireOwnedPublishedPost(user, postId, "gỡ lịch trình của");
+        requireNotHidden(post);
+        if (post.getTripSnapshot() != null || post.getTrip() != null) {
+            boolean hasCaption = post.getCaption() != null && !post.getCaption().isBlank();
+            boolean hasMedia = !imageRepository.findByEntityTypeAndEntityId("POST", post.getId()).isEmpty();
+            if (!hasCaption && !hasMedia) {
+                throw new IllegalStateException(
+                        "Bài viết chỉ có lịch trình. Hãy thêm nội dung trước khi gỡ, hoặc xóa bài viết.");
+            }
+            post.setTrip(null);
+            post.setTripSnapshot(null);
+            post.setTripSnapshotAt(null);
+            post.setTripSnapshotHash(null);
+            post = postRepository.save(post);
+        }
+        return toPostResponses(List.of(post), user).get(0);
+    }
+
+    /**
+     * Tạo bản chụp cho bài đã gắn chuyến đi từ trước khi có tính năng bản chụp.
+     * Gọi từ PostTripSnapshotBackfill; trả về true nếu đã tạo.
+     */
+    @Transactional
+    public boolean backfillTripSnapshot(Long postId) {
+        Post post = postRepository.findById(postId).orElse(null);
+        if (post == null || post.getTrip() == null || post.getTripSnapshot() != null) {
+            return false;
+        }
+        applySnapshot(post, post.getTrip(), tripSnapshotService.capture(post.getTrip()));
+        postRepository.save(post);
+        return true;
+    }
+
+    private void applySnapshot(Post post, Trip trip, TripSnapshot snapshot) {
+        post.setTrip(trip);
+        post.setTripSnapshot(snapshot);
+        post.setTripSnapshotAt(LocalDateTime.now(ZoneOffset.UTC));
+        post.setTripSnapshotHash(tripSnapshotService.hash(snapshot));
+    }
+
+    private void requireNotHidden(Post post) {
+        if ("HIDDEN".equals(post.getModerationStatus())) {
+            throw new IllegalStateException(
+                    "Bài viết đã bị kiểm duyệt viên ẩn nên không thể chỉnh sửa. Bạn vẫn có thể xóa bài.");
+        }
+    }
+
+    /** 404 nếu không xem được bài hoặc bài không có lịch trình. */
+    private Post requireViewablePostWithTrip(Long postId, User viewer) {
+        Post post = postAccessService.requireViewablePost(postId, viewer);
+        if (post.getTripSnapshot() == null) {
+            throw new NoSuchElementException("Bài viết không có lịch trình.");
+        }
+        return post;
+    }
+
+    /** Chuyến đi được gắn vào bài: chỉ cần là CHỦ chuyến đi (quyền hiển thị nào cũng được). */
+    private Trip resolveAttachableTrip(User user, Long tripId) {
+        if (tripId == null) return null;
+        Trip trip = tripRepository.findById(tripId)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy chuyến đi để gắn vào bài viết."));
+        if (!trip.getUser().getId().equals(user.getId())) {
+            throw new IllegalArgumentException("Bạn chỉ có thể gắn chuyến đi do chính mình tạo.");
+        }
+        return trip;
+    }
+
+    /**
+     * Thẻ lịch trình cho cả trang bài, dựng từ BẢN CHỤP (không đọc chuyến gốc).
+     * Lượt sao chép: 1 câu SQL. Bài của chính người xem: so bản chụp với chuyến gốc hiện tại
+     * (chụp gộp các chuyến gốc với số câu SQL cố định) để báo "lịch trình gốc đã thay đổi".
+     */
+    private Map<Long, TripPreview> buildTripPreviews(List<Post> posts, User viewer) {
+        List<Post> withTrip = posts.stream().filter(p -> p.getTripSnapshot() != null).toList();
+        if (withTrip.isEmpty()) return Map.of();
+
+        List<Long> postIds = withTrip.stream().map(Post::getId).toList();
+        Map<Long, Long> copyCounts = toCountMap(tripRepository.countCopiesByPostIds(postIds));
+
+        List<Post> own = viewer == null ? List.of() : withTrip.stream()
+                .filter(p -> p.getUser().getId().equals(viewer.getId()))
+                .toList();
+        Set<Long> sourceIds = own.stream()
+                .map(Post::getTrip)
+                .filter(Objects::nonNull)
+                .map(Trip::getId)
+                .collect(Collectors.toSet());
+        Map<Long, String> liveHashByTrip = new HashMap<>();
+        if (!sourceIds.isEmpty()) {
+            List<Trip> sources = tripRepository.findAllWithOwnerByIdIn(sourceIds);
+            try {
+                tripSnapshotService.captureAll(sources)
+                        .forEach((id, snap) -> liveHashByTrip.put(id, tripSnapshotService.hash(snap)));
+            } catch (IllegalArgumentException tooLarge) {
+                // Chuyến gốc đã vượt giới hạn: chắc chắn khác bản chụp.
+                sources.forEach(t -> liveHashByTrip.put(t.getId(), ""));
+            }
+        }
+
+        Map<Long, TripPreview> result = new HashMap<>();
+        for (Post post : withTrip) {
+            Boolean sourceAvailable = null;
+            Boolean sourceChanged = null;
+            if (own.contains(post)) {
+                Trip source = post.getTrip();
+                sourceAvailable = source != null;
+                sourceChanged = source != null
+                        && !Objects.equals(liveHashByTrip.get(source.getId()), post.getTripSnapshotHash());
+            }
+            result.put(post.getId(), tripSnapshotService.toPreview(
+                    post.getTripSnapshot(),
+                    post.getTripSnapshotAt(),
+                    copyCounts.getOrDefault(post.getId(), 0L),
+                    sourceAvailable,
+                    sourceChanged));
+        }
+        return result;
     }
 
     // =====================================================================
@@ -384,6 +579,9 @@ public class PostService {
 
         Map<Long, Relation> relationCache = new HashMap<>();
 
+        // Lịch trình trong bài: dựng từ bản chụp của từng bài.
+        Map<Long, TripPreview> tripPreviews = buildTripPreviews(posts, currentUser);
+
         List<PostResponse> result = new ArrayList<>(posts.size());
         for (Post post : posts) {
             PostResponse dto = new PostResponse();
@@ -418,6 +616,8 @@ public class PostService {
             dto.setLikeCount(likeCounts.getOrDefault(post.getId(), 0L));
             dto.setCommentCount(commentCounts.getOrDefault(post.getId(), 0L));
             dto.setLikedByMe(likedByMe.contains(post.getId()));
+
+            dto.setTrip(tripPreviews.get(post.getId()));
 
             List<Image> mediaFiles = mediaByPost.getOrDefault(post.getId(), List.of());
 

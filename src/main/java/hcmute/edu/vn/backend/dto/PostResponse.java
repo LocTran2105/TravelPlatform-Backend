@@ -44,6 +44,9 @@ public class PostResponse {
     // MỚI: toàn bộ ảnh/video theo ĐÚNG thứ tự người dùng đã chọn khi đăng.
     private List<MediaItem> media;
 
+    // Lịch trình được gắn vào bài (null = bài không gắn lịch trình).
+    private PostTripDtos.TripPreview trip;
+
     // Tim + bình luận.
     // Field tên likedByMe, JSON vẫn là "isLikedByMe" như frontend đang dùng
     // (đặt @JsonProperty trên field cùng tên với getter nên chỉ ra MỘT key,

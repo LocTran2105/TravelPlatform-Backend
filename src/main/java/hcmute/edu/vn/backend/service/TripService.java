@@ -43,6 +43,9 @@ public class TripService {
     @Autowired
     private TripActivityService activityService;
 
+    @Autowired
+    private TripCloneService tripCloneService;
+
     private static final Set<String> VISIBILITIES =
             Set.of("PUBLIC", "FOLLOWERS", "FRIENDS", "PRIVATE");
 
@@ -212,66 +215,24 @@ public class TripService {
         return trip.getTotalBudget();
     }
 
-    // 4. Nhân bản lịch trình
+    // 4. Nhân bản lịch trình: ai XEM được chuyến đi (theo quyền hiển thị) thì được sao chép.
+    //    Chuyến đi Riêng tư chỉ chủ và bạn đồng hành sao chép được.
     @Transactional
     public Trip cloneTrip(Long originalTripId, String currentUserEmail) throws Exception {
         User currentUser = userRepository.findByEmail(currentUserEmail)
                 .orElseThrow(() -> new Exception("Không tìm thấy người dùng hiện tại!"));
 
         Trip originalTrip = tripRepository.findById(originalTripId)
-                .orElseThrow(() -> new Exception("Không tìm thấy chuyến đi gốc để clone!"));
+                .orElseThrow(() -> new Exception("Không tìm thấy chuyến đi gốc để sao chép!"));
 
-        if (!originalTrip.getIsPublic() || !"APPROVED".equals(originalTrip.getPublicStatus())) {
-            if (!originalTrip.getUser().getId().equals(currentUser.getId())) {
-                throw new Exception("Bạn không có quyền nhân bản chuyến đi này vì nó chưa được công khai!");
-            }
+        if (!canView(originalTrip, currentUser)) {
+            throw new Exception("Bạn không có quyền sao chép chuyến đi này!");
         }
 
-        Trip clonedTrip = new Trip();
-        clonedTrip.setUser(currentUser);
-        clonedTrip.setTitle("Bản sao của: " + originalTrip.getTitle());
-        clonedTrip.setDestination(originalTrip.getDestination());
-        clonedTrip.setStartDate(originalTrip.getStartDate());
-        clonedTrip.setEndDate(originalTrip.getEndDate());
-        clonedTrip.setMemberCount(1);
-        clonedTrip.setTotalBudget(originalTrip.getTotalBudget());
-        clonedTrip.setIsPublic(false);
-        clonedTrip.setVisibility("PRIVATE");
-        clonedTrip.setPublicStatus("DRAFT");
-        clonedTrip.setClonedFromTripId(originalTrip.getId());
-
-        Trip savedClonedTrip = tripRepository.save(clonedTrip);
-
-        List<TripDay> originalDays = originalTrip.getTripDays();
-        if (originalDays != null && !originalDays.isEmpty()) {
-            for (TripDay originalDay : originalDays) {
-                TripDay clonedDay = new TripDay();
-                clonedDay.setTrip(savedClonedTrip);
-                clonedDay.setDayNumber(originalDay.getDayNumber());
-                clonedDay.setDayDate(originalDay.getDayDate());
-
-                TripDay savedClonedDay = tripDayRepository.save(clonedDay);
-
-                List<TripDestination> originalDestinations = originalDay.getDestinations();
-                if (originalDestinations != null && !originalDestinations.isEmpty()) {
-                    for (TripDestination originalDest : originalDestinations) {
-                        TripDestination clonedDest = new TripDestination();
-                        clonedDest.setTripDay(savedClonedDay);
-                        clonedDest.setPlaceName(originalDest.getPlaceName());
-                        clonedDest.setLatitude(originalDest.getLatitude());
-                        clonedDest.setLongitude(originalDest.getLongitude());
-                        clonedDest.setNote(originalDest.getNote());
-                        clonedDest.setEstimatedCost(originalDest.getEstimatedCost());
-                        clonedDest.setOrderIndex(originalDest.getOrderIndex());
-
-                        tripDestinationRepository.save(clonedDest);
-                    }
-                }
-            }
-        }
-
-        return getTripDetails(savedClonedTrip.getId(), currentUserEmail);
+        Trip saved = tripCloneService.copy(originalTrip, currentUser, null, null);
+        return getTripDetails(saved.getId(), currentUserEmail);
     }
+
     // 5. Xóa chuyến đi (chỉ chủ chuyến đi mới được xóa)
     @Transactional
     public void deleteTrip(Long tripId, String userEmail) throws Exception {
@@ -319,6 +280,11 @@ public class TripService {
         boolean follows = followRepository.existsByFollowerAndFollowed(viewer, owner);
         boolean friend = follows && followRepository.existsByFollowerAndFollowed(owner, viewer);
         return new ViewerRelation(false, follows, friend);
+    }
+
+    /** Người xem (null = khách) có được xem chuyến đi này không. Dùng chung cho sao chép và bài viết. */
+    public boolean canView(Trip trip, User viewer) {
+        return trip != null && canView(trip, viewer, relationOf(viewer, trip.getUser()));
     }
 
     private boolean canView(Trip trip, User viewer, ViewerRelation relation) {

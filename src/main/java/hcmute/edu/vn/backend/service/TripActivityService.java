@@ -56,6 +56,8 @@ public class TripActivityService {
     public static final String MEMBER_JOINED = "MEMBER_JOINED";
     public static final String MEMBER_ROLE_CHANGED = "MEMBER_ROLE_CHANGED";
     public static final String MEMBER_REMOVED = "MEMBER_REMOVED";
+    /** Chuyến đi được tạo bằng cách sao chép. label = tên chuyến gốc, detail = username chủ chuyến gốc. */
+    public static final String TRIP_COPIED = "TRIP_COPIED";
 
     private final TripActivityRepository activityRepository;
     private final UserRepository userRepository;

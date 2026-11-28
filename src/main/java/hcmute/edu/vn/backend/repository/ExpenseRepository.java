@@ -18,4 +18,12 @@ public interface ExpenseRepository extends JpaRepository<Expense, Long> {
             "left join fetch s.user " +
             "where e.trip.id = :tripId")
     List<Expense> findAllWithDetailsByTripId(@Param("tripId") Long tripId);
+
+    // Khoản chi của nhiều chuyến đi + điểm đến gắn kèm (chụp lịch trình cho bài viết).
+    // Không lấy người trả / chia tiền: bản chụp không lưu những thông tin đó.
+    @Query("select e from Expense e " +
+            "left join fetch e.tripDestination " +
+            "where e.trip.id in :tripIds " +
+            "order by e.id asc")
+    List<Expense> findAllWithDestinationByTripIdIn(@Param("tripIds") java.util.Collection<Long> tripIds);
 }

@@ -38,6 +38,10 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 
     // ---- MỚI ----
 
+    /** Bài đã gắn chuyến đi nhưng chưa có bản chụp (đăng trước khi có tính năng bản chụp). */
+    @Query("SELECT p.id FROM Post p WHERE p.trip IS NOT NULL AND p.tripSnapshot IS NULL")
+    List<Long> findIdsWithTripButNoSnapshot();
+
     /** Tìm bài chưa bị xóa mềm (dùng cho sửa / xóa). */
     Optional<Post> findByIdAndStatus(Long id, String status);
 

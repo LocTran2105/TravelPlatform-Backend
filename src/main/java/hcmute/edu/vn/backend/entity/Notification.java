@@ -31,6 +31,7 @@ public class Notification {
     public static final String POST_LIKE = "POST_LIKE";
     public static final String POST_COMMENT = "POST_COMMENT";
     public static final String COMMENT_REPLY = "COMMENT_REPLY";
+    public static final String TRIP_COPIED = "TRIP_COPIED";
     // Kiểm duyệt
     public static final String CONTENT_HIDDEN = "CONTENT_HIDDEN";
     public static final String CONTENT_RESTORED = "CONTENT_RESTORED";

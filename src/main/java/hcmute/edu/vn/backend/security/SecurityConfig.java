@@ -48,6 +48,9 @@ public class SecurityConfig {
                         // Khách xem được bình luận của bài PUBLIC (quyền xem vẫn
                         // được CommentService kiểm tra theo từng bài).
                         .requestMatchers(HttpMethod.GET, "/api/posts/*/comments").permitAll()
+                        // Khách xem trước được lịch trình trong bài (PostService kiểm tra quyền
+                        // xem bài viết). Sao chép vẫn phải đăng nhập.
+                        .requestMatchers(HttpMethod.GET, "/api/posts/*/trip").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/trips/*/reviews").permitAll()
                         // Người cầm link mời được xem trước lời mời khi chưa đăng nhập
                         // (token là chuỗi ngẫu nhiên 256 bit nên không đoán được).

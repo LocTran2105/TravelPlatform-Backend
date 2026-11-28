@@ -1389,3 +1389,31 @@ CREATE TABLE IF NOT EXISTS notifications (
     CONSTRAINT fk_notifications_actor FOREIGN KEY (actor_id) REFERENCES users (id) ON DELETE SET NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+/* ============================================================================
+   POSTS <-> TRIPS: gắn lịch trình vào bài viết để người khác xem và sao chép
+   - posts.trip_id: chuyến đi được gắn (NULL = bài không gắn lịch trình).
+   - Xóa chuyến đi gốc -> bài viết vẫn còn, chỉ mất thẻ lịch trình (SET NULL).
+   - Bản sao ghi nguồn ở trips.cloned_from_trip_id (đã có sẵn).
+   Chạy riêng đoạn này trên DB đang dùng nếu không muốn cài lại từ đầu.
+   ============================================================================ */
+ALTER TABLE posts
+    ADD COLUMN trip_id BIGINT NULL AFTER user_id,
+    ADD KEY idx_posts_trip (trip_id),
+    ADD CONSTRAINT fk_posts_trip FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE SET NULL;
+
+/* ============================================================================
+   BẢN CHỤP LỊCH TRÌNH TRONG BÀI VIẾT (snapshot)
+   - Bài lưu bản chụp lịch trình + chi phí lúc đăng: tác giả sửa chuyến đi gốc thì bài KHÔNG đổi.
+     Tác giả chủ động bấm "Cập nhật vào bài" để chụp lại.
+   - posts.trip_id: chuyến đi NGUỒN (để so sánh / cập nhật). Xóa chuyến gốc -> NULL, bản chụp vẫn còn.
+   - trips.cloned_from_post_id: bản sao được tạo từ bài nào (đếm lượt sao chép theo bài).
+   ============================================================================ */
+ALTER TABLE posts
+    ADD COLUMN trip_snapshot JSON NULL COMMENT 'Bản chụp lịch trình + chi phí lúc đăng / cập nhật' AFTER trip_id,
+    ADD COLUMN trip_snapshot_at DATETIME NULL AFTER trip_snapshot,
+    ADD COLUMN trip_snapshot_hash CHAR(64) NULL COMMENT 'SHA-256 nội dung, để biết chuyến gốc đã đổi' AFTER trip_snapshot_at;
+
+ALTER TABLE trips
+    ADD COLUMN cloned_from_post_id BIGINT NULL AFTER cloned_from_trip_id,
+    ADD KEY idx_trips_cloned_from_post (cloned_from_post_id),
+    ADD CONSTRAINT fk_trips_cloned_from_post FOREIGN KEY (cloned_from_post_id) REFERENCES posts(id) ON DELETE SET NULL;

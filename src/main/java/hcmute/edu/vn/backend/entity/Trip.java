@@ -51,6 +51,10 @@ public class Trip {
     @Column(name = "cloned_from_trip_id")
     private Long clonedFromTripId;
 
+    // Bản sao được tạo từ lịch trình trong bài viết nào (đếm lượt sao chép theo bài).
+    @Column(name = "cloned_from_post_id")
+    private Long clonedFromPostId;
+
     @OneToMany(mappedBy = "trip", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("dayNumber ASC")
     private List<TripDay> tripDays;
