@@ -145,7 +145,7 @@ public class AdminPartnerBusinessService {
         }
 
         List<Place> candidates = osmPlaceDiscoveryService.discoverNearbyPlacesForAdmin(
-                business.getCity(), business.getLatitude(), business.getLongitude(),
+                business.getCity(), business.getName(), business.getLatitude(), business.getLongitude(),
                 businessType, radiusMeters, 50);
 
         return candidates.stream()

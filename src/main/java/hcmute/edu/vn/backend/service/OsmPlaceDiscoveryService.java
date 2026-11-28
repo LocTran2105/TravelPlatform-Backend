@@ -456,6 +456,7 @@ public class OsmPlaceDiscoveryService {
      */
     public List<Place> discoverNearbyPlacesForAdmin(
             String destination,
+            String businessName,
             BigDecimal latitude,
             BigDecimal longitude,
             String businessType,
@@ -481,14 +482,24 @@ public class OsmPlaceDiscoveryService {
         OverpassFetch fetch = fetchOverpass(query, safeDestination, "ADMIN_" + category,
                 ADMIN_READ_TIMEOUT_MS, ADMIN_TOTAL_TIMEOUT_MS);
         if (fetch.allEndpointsFailed()) {
-            // Overpass lỗi nhưng DB có thể đã lưu POI OSM quanh đây (từ lần tìm trước): cho Admin chọn
-            // các POI đó để liên kết, tránh phải tạo Place PARTNER trùng với địa điểm OSM.
-            List<Place> saved = findSavedOsmPlacesNear(
-                    category, latitude.doubleValue(), longitude.doubleValue(), safeRadius, safeLimit);
-            if (!saved.isEmpty()) {
-                log.warn("Overpass lỗi khi Admin kiểm tra '{}'/{}; dùng {} POI OSM đã lưu trong DB.",
-                        safeDestination, category, saved.size());
-                return saved;
+            // Overpass lỗi: gộp POI OSM đã lưu trong DB (từ lần tìm trước) với POI Photon tìm theo tên/vị trí,
+            // để Admin vẫn liên kết được, tránh phải tạo Place PARTNER trùng với địa điểm OSM.
+            Map<Long, Place> merged = new LinkedHashMap<>();
+            for (Place place : findSavedOsmPlacesNear(
+                    category, latitude.doubleValue(), longitude.doubleValue(), safeRadius, safeLimit)) {
+                merged.putIfAbsent(place.getId(), place);
+            }
+            int savedCount = merged.size();
+            for (Place place : discoverNearbyPlacesWithPhotonForAdmin(
+                    safeDestination, businessName, category,
+                    latitude.doubleValue(), longitude.doubleValue(), safeRadius)) {
+                if (merged.size() >= safeLimit) break;
+                merged.putIfAbsent(place.getId(), place);
+            }
+            if (!merged.isEmpty()) {
+                log.warn("Overpass lỗi khi Admin kiểm tra '{}'/{}; dùng {} POI OSM đã lưu trong DB và {} POI từ Photon.",
+                        safeDestination, category, savedCount, merged.size() - savedCount);
+                return new ArrayList<>(merged.values());
             }
             // Khác với "không có POI": mọi máy chủ Overpass đều lỗi/quá tải nên CHƯA kiểm tra được.
             // Báo rõ cho Admin thay vì trả danh sách rỗng (dễ hiểu nhầm là OSM không có địa điểm).
@@ -827,6 +838,116 @@ public class OsmPlaceDiscoveryService {
         return new ArrayList<>(verified.values());
     }
 
+    /**
+     * Nguồn dự phòng cho Admin khi Overpass quá tải: hỏi Photon (1) theo tên Business quanh vị trí và
+     * (2) các POI gần nhất theo nhóm thẻ OSM. Không lọc theo tên (Admin tự chọn đúng POI), chỉ giữ
+     * POI đúng loại, trong bán kính. Kết quả được lưu như POI OSM nhưng không liên kết Business.
+     */
+    private List<Place> discoverNearbyPlacesWithPhotonForAdmin(
+            String destination,
+            String businessName,
+            String category,
+            double centerLatitude,
+            double centerLongitude,
+            int radiusMeters) {
+
+        RestTemplate photonClient = createHttpClient(6_000);
+        List<URI> requests = new ArrayList<>();
+        if (hasText(businessName)) {
+            requests.add(UriComponentsBuilder.fromUriString(resolvePhotonUrl())
+                    .queryParam("q", businessName.trim())
+                    .queryParam("lat", centerLatitude)
+                    .queryParam("lon", centerLongitude)
+                    .queryParam("limit", 15)
+                    .build().encode().toUri());
+        }
+        // Nhiều osm_tag trong Photon được hiểu là "hoặc".
+        List<String> osmTags = switch (category) {
+            case "ACCOMMODATION" -> List.of("tourism", "leisure:resort");
+            case "CAFE", "RESTAURANT" -> List.of("amenity");
+            default -> List.of();
+        };
+        UriComponentsBuilder reverse = UriComponentsBuilder
+                .fromUriString(resolvePhotonUrl().replaceFirst("/api/?$", "/reverse"))
+                .queryParam("lat", centerLatitude)
+                .queryParam("lon", centerLongitude)
+                .queryParam("radius", Math.max(0.1, radiusMeters / 1000.0))
+                .queryParam("limit", 30);
+        if (!osmTags.isEmpty()) reverse.queryParam("osm_tag", osmTags.toArray());
+        requests.add(reverse.build().encode().toUri());
+
+        Map<String, Place> found = new LinkedHashMap<>();
+        for (URI uri : requests) {
+            try {
+                ResponseEntity<Map> response = photonClient.exchange(
+                        uri, HttpMethod.GET, new HttpEntity<>(buildHeaders()), Map.class);
+                Map body = response.getBody();
+                if (body == null || !(body.get("features") instanceof List<?> features)) continue;
+                for (Object featureObject : features) {
+                    Place place = upsertPhotonFeature(featureObject, destination, category,
+                            centerLatitude, centerLongitude, radiusMeters);
+                    if (place != null) found.putIfAbsent(place.getProviderPlaceId(), place);
+                }
+            } catch (Exception ex) {
+                log.warn("Photon lỗi khi Admin tìm POI quanh {},{}: {}",
+                        centerLatitude, centerLongitude, safeMessage(ex));
+            }
+        }
+        return new ArrayList<>(found.values());
+    }
+
+    /** Một feature Photon -> Place OSM đã lưu; null nếu sai loại, thiếu dữ liệu hoặc ngoài bán kính. */
+    private Place upsertPhotonFeature(
+            Object featureObject,
+            String destination,
+            String category,
+            double centerLatitude,
+            double centerLongitude,
+            int radiusMeters) {
+
+        if (!(featureObject instanceof Map feature)
+                || !(feature.get("properties") instanceof Map properties)) {
+            return null;
+        }
+        String osmName = Objects.toString(properties.get("name"), "").trim();
+        if (!hasText(osmName) || !matchesPhotonCategory(properties, category)) return null;
+
+        String osmPrefix = normalizePhotonOsmType(Objects.toString(properties.get("osm_type"), null));
+        Object rawOsmId = properties.get("osm_id");
+        if (osmPrefix == null || rawOsmId == null) return null;
+        String osmId = rawOsmId instanceof Number number
+                ? Long.toString(number.longValue())
+                : String.valueOf(rawOsmId).trim();
+        if (!hasText(osmId) || "null".equalsIgnoreCase(osmId)) return null;
+
+        if (!(feature.get("geometry") instanceof Map geometry)
+                || !(geometry.get("coordinates") instanceof List<?> coordinates)
+                || coordinates.size() < 2
+                || !(coordinates.get(0) instanceof Number longitudeValue)
+                || !(coordinates.get(1) instanceof Number latitudeValue)) {
+            return null;
+        }
+        double latitude = latitudeValue.doubleValue();
+        double longitude = longitudeValue.doubleValue();
+        if (!isValidCoordinates(latitude, longitude)
+                || calculateDistanceMeters(centerLatitude, centerLongitude, latitude, longitude) > radiusMeters) {
+            return null;
+        }
+
+        String osmKey = Objects.toString(properties.get("osm_key"), "");
+        String osmValue = Objects.toString(properties.get("osm_value"), "");
+        List<String> categories = hasText(osmKey) && hasText(osmValue)
+                ? List.of(osmKey + "=" + osmValue) : List.of();
+        try {
+            return upsertOsmPlace(osmPrefix + "/" + osmId, osmName,
+                    buildPhotonAddress(properties, destination), destination, category,
+                    latitude, longitude, categories);
+        } catch (Exception ex) {
+            log.warn("Không lưu được POI Photon '{}' cho Admin: {}", osmName, safeMessage(ex));
+            return null;
+        }
+    }
+
     private String normalizePhotonOsmType(String rawType) {
         if (rawType == null) {
             return null;
@@ -847,9 +968,10 @@ public class OsmPlaceDiscoveryService {
             case "RESTAURANT" -> "amenity".equals(key)
                     && Set.of("restaurant", "food_court", "fast_food", "bbq").contains(value);
             case "CAFE" -> "amenity".equals(key) && "cafe".equals(value);
-            case "ACCOMMODATION" -> "tourism".equals(key)
+            case "ACCOMMODATION" -> ("tourism".equals(key)
                     && Set.of("hotel", "guest_house", "hostel", "chalet", "resort", "motel", "apartment")
-                    .contains(value);
+                    .contains(value))
+                    || ("leisure".equals(key) && "resort".equals(value));
             // Điểm tham quan ở Việt Nam thường được gắn thẻ đa dạng trên OSM: hồ (natural=water), chợ
             // (amenity=marketplace), chùa/nhà thờ (amenity=place_of_worship), ga cổ (railway=station)...
             // Tên đã do người dùng/AI nêu đích danh nên chấp nhận các nhóm này, vẫn loại chỗ ở và hàng quán.
@@ -978,9 +1100,10 @@ public class OsmPlaceDiscoveryService {
         return switch (category) {
             case "RESTAURANT" -> Set.of("restaurant", "food_court", "fast_food", "bbq").contains(amenity);
             case "CAFE" -> "cafe".equals(amenity);
+            // Resort ở Việt Nam hay được gắn leisure=resort thay vì tourism=resort (vd. Terracotta, Edensee ở Đà Lạt).
             case "ACCOMMODATION" -> Set.of(
                     "hotel", "guest_house", "hostel", "chalet", "resort", "motel", "apartment"
-            ).contains(tourism);
+            ).contains(tourism) || "resort".equals(leisure);
             default -> Set.of(
                     "attraction", "viewpoint", "museum", "theme_park", "gallery", "zoo", "aquarium", "artwork"
             ).contains(tourism)
@@ -1318,8 +1441,8 @@ public class OsmPlaceDiscoveryService {
         return switch (upper) {
             case "RESTAURANT", "FOOD", "ĂN UỐNG", "EATERY" -> "RESTAURANT";
             case "CAFE", "COFFEE", "COFFEE_SHOP" -> "CAFE";
-            case "ACCOMMODATION", "HOTEL", "HOMESTAY", "LODGING", "STAY" -> "ACCOMMODATION";
-            case "ATTRACTION", "TOURIST_ATTRACTION", "SIGHTSEEING", "ENTERTAINMENT", "ACTIVITY" -> "ATTRACTION";
+            case "ACCOMMODATION", "HOTEL", "HOMESTAY", "RESORT", "HOSTEL", "APARTMENT", "LODGING", "STAY" -> "ACCOMMODATION";
+            case "ATTRACTION", "TOURIST_ATTRACTION", "TOURIST_SITE", "SIGHTSEEING", "ENTERTAINMENT", "ACTIVITY" -> "ATTRACTION";
             default -> "ATTRACTION";
         };
     }
@@ -1336,9 +1459,11 @@ public class OsmPlaceDiscoveryService {
                     "nwr[\"amenity\"~\"^(restaurant|food_court|fast_food|bbq)$\"][\"name\"]" + around + ";");
             case "CAFE" -> selectors.add(
                     "nwr[\"amenity\"=\"cafe\"][\"name\"]" + around + ";");
-            case "ACCOMMODATION" -> selectors.add(
-                    "nwr[\"tourism\"~\"^(hotel|guest_house|hostel|chalet|resort|motel|apartment)$\"][\"name\"]"
-                            + around + ";");
+            case "ACCOMMODATION" -> {
+                selectors.add("nwr[\"tourism\"~\"^(hotel|guest_house|hostel|chalet|resort|motel|apartment)$\"][\"name\"]"
+                        + around + ";");
+                selectors.add("nwr[\"leisure\"=\"resort\"][\"name\"]" + around + ";");
+            }
             default -> {
                 selectors.add("nwr[\"tourism\"~\"^(attraction|viewpoint|museum|theme_park|gallery|zoo|aquarium|artwork)$\"][\"name\"]"
                         + around + ";");
